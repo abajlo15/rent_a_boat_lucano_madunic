@@ -3,11 +3,16 @@ import {
   ZADAR_ARBANASI,
   archipelagoLocations,
   isDistantOverviewLocation,
+  type ArchipelagoLocation,
+  type TourReach,
 } from "@/data/archipelago-locations";
 
-export type LockedCamera = {
-  center: [number, number];
-  zoom: number;
+export type ReachFilter = "all" | TourReach;
+
+type GeoPoint = { lat: number; lng: number };
+
+type FitCameraOptions = {
+  maxZoom?: number;
 };
 
 const VIEWPORT_PADDING = {
@@ -16,6 +21,18 @@ const VIEWPORT_PADDING = {
   bottom: 32,
   left: 40,
 } as const;
+
+const ALL_OVERVIEW_CAMERA: FitCameraOptions = {
+  maxZoom: 10.5,
+};
+
+const HALF_DAY_CAMERA: FitCameraOptions = {
+  maxZoom: 13.2,
+};
+
+const FULL_DAY_CAMERA: FitCameraOptions = {
+  maxZoom: 10.8,
+};
 
 function getOverviewGeoPoints() {
   return [
@@ -26,94 +43,49 @@ function getOverviewGeoPoints() {
   ];
 }
 
-export function getOverviewLngLatBounds() {
-  const points = getOverviewGeoPoints();
+export function getPointsForReachFilter(reachFilter: ReachFilter): GeoPoint[] {
+  if (reachFilter === "all") {
+    return getOverviewGeoPoints();
+  }
 
-  const raw = points.reduce(
-    (bounds, point) => ({
-      minLat: Math.min(bounds.minLat, point.lat),
-      maxLat: Math.max(bounds.maxLat, point.lat),
-      minLng: Math.min(bounds.minLng, point.lng),
-      maxLng: Math.max(bounds.maxLng, point.lng),
-    }),
-    {
-      minLat: points[0].lat,
-      maxLat: points[0].lat,
-      minLng: points[0].lng,
-      maxLng: points[0].lng,
-    },
-  );
-
-  return new maplibregl.LngLatBounds(
-    [raw.minLng, raw.minLat],
-    [raw.maxLng, raw.maxLat],
-  );
+  return [
+    ZADAR_ARBANASI.geo,
+    ...archipelagoLocations
+      .filter(
+        (location) =>
+          location.tourReach === reachFilter &&
+          !isDistantOverviewLocation(location.id),
+      )
+      .map((location) => location.geo),
+  ];
 }
 
-function areAllPointsVisible(map: Map) {
-  const points = getOverviewGeoPoints();
-  const width = map.getContainer().clientWidth;
-  const height = map.getContainer().clientHeight;
-
-  if (width === 0 || height === 0) {
-    return false;
+export function getFitCameraOptions(reachFilter: ReachFilter): FitCameraOptions {
+  if (reachFilter === "all") {
+    return ALL_OVERVIEW_CAMERA;
   }
+
+  if (reachFilter === "half-day") {
+    return HALF_DAY_CAMERA;
+  }
+
+  return FULL_DAY_CAMERA;
+}
+
+function getBoundsForReachFilter(reachFilter: ReachFilter) {
+  const points = getPointsForReachFilter(reachFilter);
+  const bounds = new maplibregl.LngLatBounds();
 
   for (const point of points) {
-    const { x, y } = map.project([point.lng, point.lat]);
-
-    if (
-      x < VIEWPORT_PADDING.left ||
-      x > width - VIEWPORT_PADDING.right ||
-      y < VIEWPORT_PADDING.top ||
-      y > height - VIEWPORT_PADDING.bottom
-    ) {
-      return false;
-    }
+    bounds.extend([point.lng, point.lat]);
   }
 
-  return true;
+  return bounds;
 }
 
-function getOverviewCenter(): [number, number] {
-  const points = getOverviewGeoPoints();
-  const total = points.length;
-
-  const lng = points.reduce((sum, point) => sum + point.lng, 0) / total;
-  const lat = points.reduce((sum, point) => sum + point.lat, 0) / total;
-
-  return [lng, lat];
-}
-
-export function fitOverviewCamera(map: Map): LockedCamera {
-  const center = getOverviewCenter();
-
-  map.setMinZoom(0);
-  map.setMaxZoom(22);
-  map.setCenter(center);
-
-  let low = 5.4;
-  let high = 10.5;
-  let bestZoom = high;
-
-  for (let i = 0; i < 28; i++) {
-    const mid = (low + high) / 2;
-    map.setZoom(mid);
-    map.setCenter(center);
-
-    if (areAllPointsVisible(map)) {
-      bestZoom = mid;
-      high = mid;
-    } else {
-      low = mid;
-    }
-  }
-
-  const zoom = Math.max(5.4, bestZoom - 0.12);
-  map.setZoom(zoom);
-  map.setCenter(center);
-
-  return { center, zoom };
+function hasUsableMapSize(map: Map) {
+  const { width, height } = map.getContainer().getBoundingClientRect();
+  return width >= 10 && height >= 10;
 }
 
 export function disableFreeNavigation(map: Map) {
@@ -126,18 +98,163 @@ export function disableFreeNavigation(map: Map) {
   map.touchZoomRotate.disable();
 }
 
-export function lockCamera(map: Map, camera: LockedCamera) {
-  map.setMaxBounds(null);
-  map.jumpTo({
-    center: camera.center,
-    zoom: camera.zoom,
+export function fitMapToReachFilter(
+  map: Map,
+  reachFilter: ReachFilter,
+  options?: { animate?: boolean; duration?: number },
+): boolean {
+  if (!map.isStyleLoaded() || !hasUsableMapSize(map)) {
+    return false;
+  }
+
+  const { maxZoom = ALL_OVERVIEW_CAMERA.maxZoom! } = getFitCameraOptions(reachFilter);
+  const bounds = getBoundsForReachFilter(reachFilter);
+  const duration = options?.animate === false ? 0 : (options?.duration ?? 900);
+
+  map.resize();
+
+  const camera = map.cameraForBounds(bounds, {
+    padding: VIEWPORT_PADDING,
+    maxZoom,
   });
-  map.setMinZoom(camera.zoom);
-  map.setMaxZoom(camera.zoom);
+
+  if (!camera?.center || camera.zoom === undefined) {
+    return false;
+  }
+
+  if (duration === 0) {
+    map.jumpTo({
+      center: camera.center,
+      zoom: camera.zoom,
+    });
+  } else {
+    map.easeTo({
+      center: camera.center,
+      zoom: camera.zoom,
+      duration,
+    });
+  }
+
+  return true;
 }
 
-export function unlockForLocationZoom(map: Map, targetZoom: number) {
-  map.setMaxBounds(null);
-  map.setMinZoom(targetZoom);
-  map.setMaxZoom(Math.max(targetZoom, 14));
+export function scheduleFitMapToReachFilter(
+  map: Map,
+  reachFilter: ReachFilter,
+  options?: { animate?: boolean; duration?: number },
+  onSuccess?: () => void,
+) {
+  let attempts = 0;
+  const maxAttempts = 60;
+
+  const tryFit = () => {
+    if (fitMapToReachFilter(map, reachFilter, options)) {
+      onSuccess?.();
+      return;
+    }
+
+    attempts += 1;
+    if (attempts < maxAttempts) {
+      requestAnimationFrame(tryFit);
+    }
+  };
+
+  if (!map.isStyleLoaded()) {
+    map.once("load", tryFit);
+    return;
+  }
+
+  tryFit();
+}
+
+export type FlyTransition = "initial" | "hop";
+
+type FlyToLocationOptions = {
+  duration?: number;
+  animate?: boolean;
+  transition?: FlyTransition;
+  onSettled?: () => void;
+};
+
+export function getVisibleLocationIds(
+  map: Map,
+  locations: ArchipelagoLocation[],
+): string[] {
+  if (!map.isStyleLoaded() || !hasUsableMapSize(map)) {
+    return [];
+  }
+
+  const { width, height } = map.getContainer().getBoundingClientRect();
+
+  return locations
+    .filter((location) => {
+      const point = map.project([location.geo.lng, location.geo.lat]);
+
+      return (
+        point.x >= VIEWPORT_PADDING.left &&
+        point.x <= width - VIEWPORT_PADDING.right &&
+        point.y >= VIEWPORT_PADDING.top &&
+        point.y <= height - VIEWPORT_PADDING.bottom
+      );
+    })
+    .map((location) => location.id);
+}
+
+export function flyToLocation(
+  map: Map,
+  location: ArchipelagoLocation,
+  options?: FlyToLocationOptions,
+) {
+  if (!map.isStyleLoaded()) {
+    return;
+  }
+
+  const transition = options?.transition ?? "initial";
+  const duration =
+    options?.animate === false
+      ? 0
+      : (options?.duration ?? (transition === "hop" ? 900 : 1400));
+
+  const finish = () => {
+    options?.onSettled?.();
+  };
+
+  if (duration === 0) {
+    map.jumpTo({
+      center: [location.geo.lng, location.geo.lat],
+      zoom: location.flyToZoom,
+    });
+    finish();
+    return;
+  }
+
+  const onMoveEnd = () => {
+    map.off("moveend", onMoveEnd);
+    finish();
+  };
+
+  map.on("moveend", onMoveEnd);
+  window.setTimeout(() => {
+    map.off("moveend", onMoveEnd);
+    finish();
+  }, duration + 120);
+
+  if (transition === "hop") {
+    map.easeTo({
+      center: [location.geo.lng, location.geo.lat],
+      zoom: location.flyToZoom,
+      duration,
+      essential: true,
+    });
+    return;
+  }
+
+  map.flyTo({
+    center: [location.geo.lng, location.geo.lat],
+    zoom: location.flyToZoom,
+    duration,
+    curve: 1.4,
+    speed: 0.8,
+    essential: true,
+  });
 }

@@ -8,6 +8,35 @@ export function SiteFooter() {
           without skipper.
         </p>
         <p>Contact details and real photos will be added in the next update.</p>
+        <p className="text-xs text-slate-400">
+          Map data ©{" "}
+          <a
+            href="https://www.openstreetmap.org/copyright"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="underline decoration-slate-300 underline-offset-2 hover:text-slate-600"
+          >
+            OpenStreetMap
+          </a>{" "}
+          contributors · ©{" "}
+          <a
+            href="https://carto.com/attributions"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="underline decoration-slate-300 underline-offset-2 hover:text-slate-600"
+          >
+            CARTO
+          </a>{" "}
+          ·{" "}
+          <a
+            href="https://maplibre.org/"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="underline decoration-slate-300 underline-offset-2 hover:text-slate-600"
+          >
+            MapLibre
+          </a>
+        </p>
       </div>
     </footer>
   );
