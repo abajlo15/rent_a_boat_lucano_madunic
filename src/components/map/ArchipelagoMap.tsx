@@ -1,13 +1,16 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   archipelagoLocations,
+  getLocationById,
   type ArchipelagoLocation,
   type TourReach,
 } from "@/data/archipelago-locations";
 import type { ArchipelagoMapHandle } from "@/components/map/ArchipelagoMapLibre";
+import { LocationMarkerCallout } from "@/components/map/LocationMarkerCallout";
+import { useNarrowViewport } from "@/components/map/useNarrowViewport";
 
 const ArchipelagoMapLibre = dynamic(
   () =>
@@ -41,8 +44,23 @@ export function ArchipelagoMap({
 }: ArchipelagoMapProps) {
   const mapHandleRef = useRef<ArchipelagoMapHandle | null>(null);
   const pendingFilterRef = useRef<ReachFilter | null>(null);
+  const reachFilterRef = useRef<ReachFilter>("all");
+  const isNarrowRef = useRef(false);
+  const filterAppliedAtRef = useRef(0);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [reachFilter, setReachFilter] = useState<ReachFilter>("all");
+  const isNarrow = useNarrowViewport();
+  const selectedLocation = selectedId ? getLocationById(selectedId) ?? null : null;
+  const showMap = !isNarrow || !selectedId;
+  const showMobileDetail = isNarrow && selectedLocation;
+
+  useEffect(() => {
+    reachFilterRef.current = reachFilter;
+  }, [reachFilter]);
+
+  useEffect(() => {
+    isNarrowRef.current = isNarrow;
+  }, [isNarrow]);
 
   const visibleLocations = useMemo(
     () =>
@@ -52,15 +70,56 @@ export function ArchipelagoMap({
     [locations, reachFilter],
   );
 
-  const handleSelect = (id: string) => {
-    setSelectedId((current) => (current === id ? null : id));
-  };
+  const applyMobileSelect = useCallback((id: string) => {
+    const location = getLocationById(id);
+    if (!location) {
+      return;
+    }
+
+    const targetFilter = location.tourReach;
+    const currentFilter = reachFilterRef.current;
+    const now = Date.now();
+
+    if (currentFilter !== "all" && currentFilter === targetFilter) {
+      if (now - filterAppliedAtRef.current < 500) {
+        return;
+      }
+
+      setSelectedId(id);
+      return;
+    }
+
+    filterAppliedAtRef.current = now;
+    reachFilterRef.current = targetFilter;
+    setReachFilter(targetFilter);
+    setSelectedId(null);
+
+    if (mapHandleRef.current) {
+      mapHandleRef.current.fitToFilter(targetFilter);
+      return;
+    }
+
+    pendingFilterRef.current = targetFilter;
+  }, []);
+
+  const handleSelect = useCallback(
+    (id: string) => {
+      if (!isNarrowRef.current) {
+        setSelectedId(id);
+        return;
+      }
+
+      applyMobileSelect(id);
+    },
+    [applyMobileSelect],
+  );
 
   const handleReset = () => {
     setSelectedId(null);
   };
 
   const handleFilterClick = (filter: ReachFilter) => {
+    filterAppliedAtRef.current = 0;
     setReachFilter(filter);
     setSelectedId(null);
 
@@ -92,40 +151,38 @@ export function ArchipelagoMap({
       </div>
 
       <div className="relative overflow-hidden rounded-2xl border border-blue-200/80 bg-slate-50 shadow-sm ring-1 ring-blue-100/60">
-        <div className="aspect-[10/7] w-full min-h-[320px]">
-          <ArchipelagoMapLibre
-            locations={visibleLocations}
-            reachFilter={reachFilter}
-            selectedId={selectedId}
-            onSelect={handleSelect}
-            onReset={handleReset}
-            onMapReady={(handle) => {
-              mapHandleRef.current = handle;
+        <div
+          className={
+            showMobileDetail ? "w-full" : "aspect-[10/7] w-full min-h-[320px]"
+          }
+        >
+          {showMap && (
+            <ArchipelagoMapLibre
+              locations={visibleLocations}
+              reachFilter={reachFilter}
+              selectedId={selectedId}
+              onSelect={handleSelect}
+              onReset={handleReset}
+              showCalloutInMap={!isNarrow}
+              onMapReady={(handle) => {
+                mapHandleRef.current = handle;
 
-              if (pendingFilterRef.current) {
-                handle.fitToFilter(pendingFilterRef.current);
-                pendingFilterRef.current = null;
-              }
-            }}
-          />
+                if (pendingFilterRef.current) {
+                  handle.fitToFilter(pendingFilterRef.current);
+                  pendingFilterRef.current = null;
+                }
+              }}
+            />
+          )}
+
+          {showMobileDetail && (
+            <LocationMarkerCallout
+              location={selectedLocation}
+              onClose={handleReset}
+              variant="detail"
+            />
+          )}
         </div>
-
-        {!selectedId && (
-          <div className="pointer-events-none absolute bottom-3 left-3 z-10 max-w-[240px] rounded-xl border border-white/80 bg-white/90 px-3 py-2.5 text-xs text-slate-600 shadow-sm backdrop-blur-sm">
-            <p className="font-medium text-slate-700">Select a destination</p>
-            <p className="mt-1 text-slate-500">Tap a pin to explore tour details.</p>
-            <div className="mt-2 space-y-1">
-              <p>
-                <span className="inline-block h-2.5 w-2.5 rounded-full bg-blue-600 align-middle" />{" "}
-                Blue — half-day
-              </p>
-              <p>
-                <span className="inline-block h-2.5 w-2.5 rounded-full bg-slate-900 align-middle" />{" "}
-                Dark — full-day
-              </p>
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );

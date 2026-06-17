@@ -28,6 +28,7 @@ import {
   type DirectionIndicator,
 } from "@/components/map/directionIndicatorUtils";
 import { applyMarineBlueTheme } from "@/components/map/mapStyleTheme";
+import { useNarrowViewport, getIsNarrowViewport } from "@/components/map/useNarrowViewport";
 
 const MAP_STYLE = "https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json";
 
@@ -51,22 +52,9 @@ type ArchipelagoMapLibreProps = {
   onSelect: (id: string) => void;
   onReset: () => void;
   onMapReady?: (handle: ArchipelagoMapHandle) => void;
+  /** When false, parent renders the callout (e.g. fixed sheet on narrow viewports). */
+  showCalloutInMap?: boolean;
 };
-
-function useIsMobile() {
-  const [isMobile, setIsMobile] = useState(false);
-
-  useEffect(() => {
-    const mediaQuery = window.matchMedia("(max-width: 767px)");
-    const update = () => setIsMobile(mediaQuery.matches);
-
-    update();
-    mediaQuery.addEventListener("change", update);
-    return () => mediaQuery.removeEventListener("change", update);
-  }, []);
-
-  return isMobile;
-}
 
 function applyMarkerTransitions(map: Map) {
   map.setPaintProperty(LOCATION_PULSE_LAYER, "circle-radius-transition", {
@@ -231,6 +219,7 @@ export const ArchipelagoMapLibre = forwardRef<ArchipelagoMapHandle, ArchipelagoM
       onSelect,
       onReset,
       onMapReady,
+      showCalloutInMap = true,
     },
     ref,
   ) {
@@ -240,6 +229,7 @@ export const ArchipelagoMapLibre = forwardRef<ArchipelagoMapHandle, ArchipelagoM
     const pendingFilterRef = useRef<ReachFilter | null>(null);
     const hadSelectionRef = useRef(false);
     const previousSelectedIdRef = useRef<string | null>(null);
+    const suppressNextMapClickResetRef = useRef(false);
     const locationsRef = useRef(locations);
     const reachFilterRef = useRef(reachFilter);
     const selectedIdRef = useRef(selectedId);
@@ -249,6 +239,8 @@ export const ArchipelagoMapLibre = forwardRef<ArchipelagoMapHandle, ArchipelagoM
     const indicatorGenerationRef = useRef(0);
     const recomputeIndicatorsRef = useRef<() => void>(() => {});
     const syncVisibleLocationsRef = useRef<() => void>(() => {});
+    const isNarrowRef = useRef(getIsNarrowViewport());
+    const selectGestureRef = useRef({ emitted: false });
 
     const [mapReady, setMapReady] = useState(false);
     const [visibleLocationIds, setVisibleLocationIds] = useState<string[]>([]);
@@ -262,7 +254,10 @@ export const ArchipelagoMapLibre = forwardRef<ArchipelagoMapHandle, ArchipelagoM
     });
     const [calloutInView, setCalloutInView] = useState(false);
 
-    const isMobile = useIsMobile();
+    const isNarrow = useNarrowViewport();
+    useEffect(() => {
+      isNarrowRef.current = isNarrow;
+    }, [isNarrow]);
 
     locationsRef.current = locations;
     reachFilterRef.current = reachFilter;
@@ -408,19 +403,101 @@ export const ArchipelagoMapLibre = forwardRef<ArchipelagoMapHandle, ArchipelagoM
         runInitialFit();
       });
 
+      const resetSelectGesture = () => {
+        selectGestureRef.current.emitted = false;
+      };
+
+      const emitSelect = (id: string) => {
+        if (selectGestureRef.current.emitted) {
+          return;
+        }
+
+        selectGestureRef.current.emitted = true;
+        suppressNextMapClickResetRef.current = true;
+        onSelectRef.current(id);
+      };
+
       const handleLocationClick = (event: MapLayerMouseEvent) => {
         const feature = event.features?.[0];
         const id = feature?.properties?.id;
 
         if (typeof id === "string") {
-          onSelectRef.current(id);
+          emitSelect(id);
         }
       };
 
-      const handleMapClick = (event: MapMouseEvent) => {
-        const features = map.queryRenderedFeatures(event.point, {
-          layers: [LOCATION_CIRCLES_LAYER, DEPARTURE_LAYER],
-        });
+      const selectNearestLocationAtPoint = (
+        point: { x: number; y: number },
+        radiusPx: number,
+      ) => {
+        const nearest = locationsRef.current
+          .map((location) => {
+            const projected = map.project([location.geo.lng, location.geo.lat]);
+            const dx = projected.x - point.x;
+            const dy = projected.y - point.y;
+            return { id: location.id, distance: Math.hypot(dx, dy) };
+          })
+          .sort((a, b) => a.distance - b.distance)[0];
+
+        if (nearest && nearest.distance <= radiusPx) {
+          emitSelect(nearest.id);
+          return true;
+        }
+
+        return false;
+      };
+
+      const getEventPoint = (event: MapMouseEvent | maplibregl.MapTouchEvent) => {
+        if ("point" in event && event.point) {
+          return event.point;
+        }
+
+        if ("points" in event && Array.isArray(event.points) && event.points.length > 0) {
+          return event.points[0];
+        }
+
+        return null;
+      };
+
+      const handleMapClick = (event: MapMouseEvent | maplibregl.MapTouchEvent) => {
+        if (suppressNextMapClickResetRef.current) {
+          suppressNextMapClickResetRef.current = false;
+          return;
+        }
+
+        const point = getEventPoint(event);
+        if (!point) {
+          return;
+        }
+
+        const hitRadius = isNarrowRef.current ? 20 : 8;
+        const features = map.queryRenderedFeatures(
+          [
+            [point.x - hitRadius, point.y - hitRadius],
+            [point.x + hitRadius, point.y + hitRadius],
+          ],
+          {
+            layers: [LOCATION_CIRCLES_LAYER, LOCATION_LABELS_LAYER, DEPARTURE_LAYER],
+          },
+        );
+
+        const locationFeature = features.find(
+          (feature) =>
+            (feature.layer.id === LOCATION_CIRCLES_LAYER ||
+              feature.layer.id === LOCATION_LABELS_LAYER) &&
+            typeof feature.properties?.id === "string",
+        );
+
+        if (locationFeature && typeof locationFeature.properties?.id === "string") {
+          emitSelect(locationFeature.properties.id);
+          return;
+        }
+
+        if (isNarrowRef.current) {
+          if (selectNearestLocationAtPoint(point, 44)) {
+            return;
+          }
+        }
 
         if (features.length === 0) {
           onResetRef.current();
@@ -436,9 +513,77 @@ export const ArchipelagoMapLibre = forwardRef<ArchipelagoMapHandle, ArchipelagoM
       };
 
       map.on("click", LOCATION_CIRCLES_LAYER, handleLocationClick);
+      map.on("click", LOCATION_LABELS_LAYER, handleLocationClick);
+      map.on("touchend", LOCATION_CIRCLES_LAYER, (event) =>
+        handleLocationClick(event as unknown as MapLayerMouseEvent),
+      );
+      map.on("touchend", LOCATION_LABELS_LAYER, (event) =>
+        handleLocationClick(event as unknown as MapLayerMouseEvent),
+      );
       map.on("click", handleMapClick);
+      map.on("touchend", handleMapClick);
+
+      // Device toolbar in Chrome can bypass MapLibre layer click hit-testing.
+      // Canvas-level fallback keeps destination tap selection reliable.
+      const canvas = map.getCanvas();
+      const mapContainer = map.getContainer();
+      const handleGestureStart = () => {
+        resetSelectGesture();
+      };
+      const handleCanvasTouchEnd = (event: TouchEvent) => {
+        if (!isNarrowRef.current || event.changedTouches.length === 0) {
+          return;
+        }
+
+        const rect = canvas.getBoundingClientRect();
+        const touch = event.changedTouches[0];
+        const point = {
+          x: touch.clientX - rect.left,
+          y: touch.clientY - rect.top,
+        };
+
+        selectNearestLocationAtPoint(point, 48);
+      };
+      const handleCanvasPointerUp = (event: PointerEvent | MouseEvent) => {
+        if (!isNarrowRef.current) {
+          return;
+        }
+
+        const rect = canvas.getBoundingClientRect();
+        const point = {
+          x: event.clientX - rect.left,
+          y: event.clientY - rect.top,
+        };
+
+        selectNearestLocationAtPoint(point, 48);
+      };
+      const handleContainerPointerUp = (event: PointerEvent) => {
+        if (!isNarrowRef.current) {
+          return;
+        }
+
+        const rect = mapContainer.getBoundingClientRect();
+        const point = {
+          x: event.clientX - rect.left,
+          y: event.clientY - rect.top,
+        };
+
+        selectNearestLocationAtPoint(point, 56);
+      };
+
+      canvas.addEventListener("touchstart", handleGestureStart, { passive: true });
+      canvas.addEventListener("pointerdown", handleGestureStart, { passive: true });
+      mapContainer.addEventListener("pointerdown", handleGestureStart, { passive: true });
+      canvas.addEventListener("touchend", handleCanvasTouchEnd, { passive: true });
+      canvas.addEventListener("pointerup", handleCanvasPointerUp, { passive: true });
+      mapContainer.addEventListener("pointerup", handleContainerPointerUp, {
+        passive: true,
+        capture: true,
+      });
       map.on("mouseenter", LOCATION_CIRCLES_LAYER, setPointerCursor);
       map.on("mouseleave", LOCATION_CIRCLES_LAYER, resetCursor);
+      map.on("mouseenter", LOCATION_LABELS_LAYER, setPointerCursor);
+      map.on("mouseleave", LOCATION_LABELS_LAYER, resetCursor);
 
       mapRef.current = map;
 
@@ -458,6 +603,14 @@ export const ArchipelagoMapLibre = forwardRef<ArchipelagoMapHandle, ArchipelagoM
       resizeObserver.observe(containerRef.current);
 
       return () => {
+        canvas.removeEventListener("touchstart", handleGestureStart);
+        canvas.removeEventListener("pointerdown", handleGestureStart);
+        mapContainer.removeEventListener("pointerdown", handleGestureStart);
+        canvas.removeEventListener("touchend", handleCanvasTouchEnd);
+        canvas.removeEventListener("pointerup", handleCanvasPointerUp);
+        mapContainer.removeEventListener("pointerup", handleContainerPointerUp, {
+          capture: true,
+        });
         resizeObserver.disconnect();
         map.remove();
         mapRef.current = null;
@@ -615,11 +768,30 @@ export const ArchipelagoMapLibre = forwardRef<ArchipelagoMapHandle, ArchipelagoM
       };
     }, [selectedId]);
 
+    useEffect(() => {
+      const map = mapRef.current;
+      if (!map || !map.isStyleLoaded()) {
+        return;
+      }
+
+      // Keep destination names visible on smaller screens.
+      map.setLayoutProperty(LOCATION_LABELS_LAYER, "text-allow-overlap", isNarrow);
+      map.setLayoutProperty(LOCATION_LABELS_LAYER, "text-ignore-placement", isNarrow);
+      map.setLayoutProperty(LOCATION_LABELS_LAYER, "text-size", isNarrow ? 10 : 12);
+      map.setLayoutProperty(
+        LOCATION_LABELS_LAYER,
+        "text-max-width",
+        isNarrow ? 12 : 10,
+      );
+      map.setPaintProperty(LOCATION_LABELS_LAYER, "text-halo-width", isNarrow ? 2.4 : 1.5);
+      map.setPaintProperty(LOCATION_LABELS_LAYER, "text-color", isNarrow ? "#020617" : "#0f172a");
+    }, [isNarrow, mapReady]);
+
     return (
       <div className="relative h-full w-full">
         <div
           ref={containerRef}
-          className="h-full w-full touch-none"
+          className="h-full w-full"
           role="application"
           aria-label="Interactive MapLibre map of the Zadar archipelago"
         />
@@ -627,11 +799,11 @@ export const ArchipelagoMapLibre = forwardRef<ArchipelagoMapHandle, ArchipelagoM
           indicators={directionIndicators}
           onNavigate={onSelect}
         />
-        {selectedLocation && (isMobile || calloutInView) && (
+        {showCalloutInMap && selectedLocation && calloutInView && (
           <LocationMarkerCallout
             location={selectedLocation}
             onClose={onReset}
-            variant={isMobile ? "sheet" : "anchored"}
+            variant="anchored"
             anchor={calloutAnchor ?? undefined}
             containerSize={calloutContainerSize}
           />

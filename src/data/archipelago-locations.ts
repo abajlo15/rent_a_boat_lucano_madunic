@@ -9,13 +9,27 @@ export type ArchipelagoLocation = {
   flyToZoom: number;
   geo: { lat: number; lng: number };
   subDestinations?: string[];
+  coverImages?: string[];
 };
+
+/** Public paths for destination carousel images, e.g. `/destinations/saharun/01.jpg` */
+export function destinationCoverImages(slug: string, count = 3) {
+  return Array.from({ length: count }, (_, i) =>
+    `/destinations/${slug}/${String(i + 1).padStart(2, "0")}.jpg`,
+  );
+}
+
+/** Public path for a destination gallery image, e.g. `/destinations/saharun/gallery/01.jpg` */
+export function destinationGalleryImage(slug: string, filename: string) {
+  return `/destinations/${slug}/gallery/${filename}`;
+}
 
 export const archipelagoLocations: ArchipelagoLocation[] = [
   {
     id: "telascica",
     slug: "telascica",
     name: "NP Telašćica",
+    coverImages: destinationCoverImages("telascica"),
     shortDescription:
       "Nature Park on the southern tip of Dugi Otok — dramatic cliffs, salt lake Mir, and secluded bays.",
     tourReach: "full-day",
@@ -26,6 +40,7 @@ export const archipelagoLocations: ArchipelagoLocation[] = [
     id: "kornati",
     slug: "kornati",
     name: "NP Kornati",
+    coverImages: destinationCoverImages("kornati"),
     shortDescription:
       "A labyrinth of over a hundred islands — raw stone, turquoise channels, and pure Adriatic silence.",
     tourReach: "full-day",
@@ -36,17 +51,23 @@ export const archipelagoLocations: ArchipelagoLocation[] = [
   {
     id: "saharun",
     slug: "saharun",
-    name: "Saharun",
+    name: "Sakarun",
     shortDescription:
       "Iconic white-sand beach on the north of Dugi Otok — shallow turquoise water ideal for swimming.",
     tourReach: "full-day",
     flyToZoom: 12,
     geo: { lat: 44.13378, lng: 14.87194 },
+    coverImages: destinationCoverImages("saharun"),
   },
   {
     id: "potopljeni-brod",
     slug: "potopljeni-brod",
     name: "Potopljeni brod (Veli Rat)",
+    coverImages: [
+      "/destinations/potopljeni-brod/01.jpeg",
+      "/destinations/potopljeni-brod/02.jpeg",
+      "/destinations/potopljeni-brod/03.jpg",
+    ],
     shortDescription:
       "Wreck dive and snorkel spot near Veli Rat lighthouse — a memorable stop on Dugi Otok's north coast.",
     tourReach: "full-day",
@@ -57,6 +78,7 @@ export const archipelagoLocations: ArchipelagoLocation[] = [
     id: "titove-spilje",
     slug: "titove-spilje",
     name: "Titove špilje",
+    coverImages: destinationCoverImages("titove-spilje"),
     shortDescription:
       "Historic sea caves on the island of Vis — crystal-clear water and a glimpse into Adriatic history.",
     tourReach: "full-day",
@@ -72,11 +94,21 @@ export const archipelagoLocations: ArchipelagoLocation[] = [
     tourReach: "full-day",
     flyToZoom: 11.5,
     geo: { lat: 44.05597, lng: 14.98574 },
+    coverImages: [
+      "/destinations/golubinka/01.webp",
+      "/destinations/golubinka/02.webp",
+      "/destinations/golubinka/03.webp",
+    ],
   },
   {
     id: "vodenjak",
     slug: "vodenjak",
     name: "Vodenjak",
+    coverImages: [
+      "/destinations/vodenjak/01.webp",
+      "/destinations/vodenjak/02.jpg",
+      "/destinations/vodenjak/03.jpg",
+    ],
     shortDescription:
       "Sheltered cove on the island of Iž — calm anchorage perfect for a swim and lunch stop.",
     tourReach: "full-day",
@@ -87,6 +119,11 @@ export const archipelagoLocations: ArchipelagoLocation[] = [
     id: "olib",
     slug: "olib",
     name: "Olib",
+    coverImages: [
+      "/destinations/olib/01.jpg",
+      "/destinations/olib/02.webp",
+      "/destinations/olib/03.jpg",
+    ],
     shortDescription:
       "Peaceful northern island with sandy beaches and a timeless, car-free village atmosphere.",
     tourReach: "full-day",
@@ -97,6 +134,11 @@ export const archipelagoLocations: ArchipelagoLocation[] = [
     id: "silba",
     slug: "silba",
     name: "Silba",
+    coverImages: [
+      "/destinations/silba/01.webp",
+      "/destinations/silba/02.jpg",
+      "/destinations/silba/03.jpg",
+    ],
     shortDescription:
       "Charming island north of Zadar — pine-shaded shores, clear sea, and relaxed island life.",
     tourReach: "full-day",
@@ -107,6 +149,11 @@ export const archipelagoLocations: ArchipelagoLocation[] = [
     id: "lazaret-osljak",
     slug: "lazaret-osljak",
     name: "Lazaret (Ošljak)",
+    coverImages: [
+      "/destinations/lazaret-osljak/01.png",
+      "/destinations/lazaret-osljak/02.jpg",
+      "/destinations/lazaret-osljak/03.jpg",
+    ],
     shortDescription:
       "Tiny island minutes from Zadar — the Lazaret bay offers a quick escape with a local feel.",
     tourReach: "half-day",
@@ -117,6 +164,11 @@ export const archipelagoLocations: ArchipelagoLocation[] = [
     id: "kostanj",
     slug: "kostanj",
     name: "Kostanj",
+    coverImages: [
+      "/destinations/kostanj/01.jpg",
+      "/destinations/kostanj/02.jpg",
+      "/destinations/kostanj/03.webp",
+    ],
     shortDescription:
       "Popular swimming bay on Ugljan — pine trees, pebble beach, and calm Adriatic water.",
     tourReach: "half-day",
@@ -132,11 +184,17 @@ export const archipelagoLocations: ArchipelagoLocation[] = [
     tourReach: "half-day",
     flyToZoom: 12.5,
     geo: { lat: 44.11687, lng: 15.13617 },
+    coverImages: [
+      "/destinations/frnaza/01.png",
+      "/destinations/frnaza/02.png",
+      "/destinations/frnaza/03.png",
+    ],
   },
   {
     id: "skoljic",
     slug: "skoljic",
     name: "Školjić",
+    coverImages: destinationCoverImages("skoljic"),
     shortDescription:
       "Small islet (Galevac) off Preko — monastery ruins and crystal water reachable by boat.",
     tourReach: "half-day",
@@ -147,6 +205,7 @@ export const archipelagoLocations: ArchipelagoLocation[] = [
     id: "preko",
     slug: "preko",
     name: "Preko",
+    coverImages: destinationCoverImages("preko"),
     shortDescription:
       "Main ferry port on Ugljan — lively waterfront, cafés, and easy access to nearby coves.",
     tourReach: "half-day",
@@ -157,6 +216,7 @@ export const archipelagoLocations: ArchipelagoLocation[] = [
     id: "kali",
     slug: "kali",
     name: "Kali",
+    coverImages: destinationCoverImages("kali"),
     shortDescription:
       "Traditional fishing village on Ugljan — authentic atmosphere and excellent local seafood.",
     tourReach: "half-day",
@@ -167,6 +227,7 @@ export const archipelagoLocations: ArchipelagoLocation[] = [
     id: "muline",
     slug: "muline",
     name: "Muline",
+    coverImages: destinationCoverImages("muline"),
     shortDescription:
       "Quiet bay and harbour on Ugljan — a relaxed half-day anchorage with beautiful sunsets.",
     tourReach: "half-day",
