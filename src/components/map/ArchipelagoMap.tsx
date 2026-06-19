@@ -153,7 +153,9 @@ export function ArchipelagoMap({
       <div className="relative overflow-hidden rounded-2xl border border-blue-200/80 bg-slate-50 shadow-sm ring-1 ring-blue-100/60">
         <div
           className={
-            showMobileDetail ? "w-full" : "aspect-[10/7] w-full min-h-[320px]"
+            showMobileDetail
+              ? "flex min-h-[min(560px,82vh)] h-full w-full"
+              : "aspect-[10/7] w-full min-h-[320px]"
           }
         >
           {showMap && (

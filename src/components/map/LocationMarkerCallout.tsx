@@ -18,7 +18,10 @@ import {
   type CalloutContainerSize,
   type CalloutPlacement,
 } from "@/components/map/calloutPlacement";
+import { DestinationHeroCard } from "@/components/map/DestinationHeroCard";
+import { DestinationStreetViewPanel } from "@/components/map/DestinationStreetViewPanel";
 import { useNarrowViewport } from "@/components/map/useNarrowViewport";
+import { isGoogleMapsConfigured } from "@/lib/googleStreetViewEmbedUrl";
 
 export type { CalloutAnchor };
 
@@ -55,6 +58,7 @@ function CalloutCoverCarousel({
   enableSwipe,
   onClose,
   onAllFailed,
+  fillContainer = false,
 }: {
   images: string[];
   locationName: string;
@@ -62,6 +66,7 @@ function CalloutCoverCarousel({
   enableSwipe: boolean;
   onClose?: () => void;
   onAllFailed?: () => void;
+  fillContainer?: boolean;
 }) {
   const [index, setIndex] = useState(0);
   const [paused, setPaused] = useState(false);
@@ -162,7 +167,11 @@ function CalloutCoverCarousel({
 
   return (
     <div
-      className={`relative w-full shrink-0 touch-pan-y overflow-hidden ${CAROUSEL_HEIGHT[variant]}`}
+      className={`relative touch-pan-y overflow-hidden ${
+        fillContainer
+          ? "absolute inset-0 h-full w-full"
+          : `w-full shrink-0 ${CAROUSEL_HEIGHT[variant]}`
+      }`}
       onMouseEnter={() => setPaused(true)}
       onMouseLeave={() => setPaused(false)}
       onTouchStart={handleTouchStart}
@@ -210,7 +219,11 @@ function CalloutCoverCarousel({
             </svg>
           </button>
 
-          <div className="absolute inset-x-0 bottom-2 flex justify-center gap-1.5">
+          <div
+            className={`absolute inset-x-0 flex justify-center gap-1.5 ${
+              fillContainer ? "bottom-[38%]" : "bottom-2"
+            }`}
+          >
             {visibleImages.map((image, dotIndex) => (
               <button
                 key={image}
@@ -235,33 +248,49 @@ function CalloutContent({
   mapActionLabel = "Show full map",
   compact = false,
   hideCloseButton = false,
+  hideMapAction = false,
   showGalleryPlaceholder = false,
+  tone = "default",
+  onOpenStreetView,
+  streetViewAvailable = false,
 }: Omit<LocationMarkerCalloutProps, "variant" | "anchor" | "containerSize"> & {
   mapActionLabel?: string;
   compact?: boolean;
   hideCloseButton?: boolean;
+  hideMapAction?: boolean;
   showGalleryPlaceholder?: boolean;
+  tone?: "default" | "hero-panel";
+  onOpenStreetView?: () => void;
+  streetViewAvailable?: boolean;
 }) {
+  const isHeroPanel = tone === "hero-panel";
+
+  const badgeClass = isHeroPanel
+    ? location.tourReach === "half-day"
+      ? "bg-cyan-400 text-slate-900"
+      : "bg-white/20 text-white backdrop-blur-sm"
+    : location.tourReach === "half-day"
+      ? "bg-cyan-100 text-cyan-800"
+      : "bg-slate-200 text-slate-800";
+
+  const titleClass = isHeroPanel
+    ? `mt-1 font-semibold leading-tight text-white ${compact ? "text-xl" : "text-2xl"}`
+    : `mt-1 font-semibold leading-tight text-slate-900 ${compact ? "text-lg" : "mt-1.5 text-xl md:text-2xl"}`;
+
+  const bodyClass = isHeroPanel
+    ? `leading-relaxed text-slate-200 ${compact ? "text-sm" : "text-sm"}`
+    : `leading-relaxed text-slate-600 ${compact ? "text-xs" : "text-sm"}`;
+
   return (
     <>
       <div className={`flex flex-wrap items-start justify-between gap-2 ${compact ? "mb-2" : "mb-3"}`}>
         <div className="min-w-0 flex-1">
           <span
-            className={`inline-block rounded-full px-2.5 py-1 text-xs font-semibold ${
-              location.tourReach === "half-day"
-                ? "bg-cyan-100 text-cyan-800"
-                : "bg-slate-200 text-slate-800"
-            }`}
+            className={`inline-block rounded-full px-2.5 py-1 text-xs font-semibold ${badgeClass}`}
           >
             {reachLabel[location.tourReach]}
           </span>
-          <h2
-            className={`mt-1 font-semibold leading-tight text-slate-900 ${
-              compact ? "text-lg" : "mt-1.5 text-xl md:text-2xl"
-            }`}
-          >
-            {location.name}
-          </h2>
+          <h2 className={titleClass}>{location.name}</h2>
         </div>
         {!hideCloseButton && (
           <button
@@ -275,18 +304,16 @@ function CalloutContent({
         )}
       </div>
 
-      <p className={`leading-relaxed text-slate-600 ${compact ? "text-xs" : "text-sm"}`}>
-        {location.shortDescription}
-      </p>
+      <p className={bodyClass}>{location.shortDescription}</p>
 
       {location.subDestinations && location.subDestinations.length > 0 && (
         <div className={compact ? "mt-2" : "mt-3"}>
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+          <p className={`text-xs font-semibold uppercase tracking-wide ${isHeroPanel ? "text-slate-300" : "text-slate-500"}`}>
             Also includes
           </p>
           <ul className="mt-1.5 space-y-0.5">
             {location.subDestinations.map((sub) => (
-              <li key={sub} className="text-sm text-slate-700">
+              <li key={sub} className={`text-sm ${isHeroPanel ? "text-slate-100" : "text-slate-700"}`}>
                 — {sub}
               </li>
             ))}
@@ -304,30 +331,58 @@ function CalloutContent({
         </div>
       )}
 
-      <div className={`rounded-lg border border-slate-300 bg-slate-50 ${compact ? "mt-2 p-2.5" : "mt-3 p-3"}`}>
-        <p className="text-xs text-slate-500">Price from</p>
-        <p className="text-base font-semibold text-slate-900">EUR — coming soon</p>
+      <div
+        className={`rounded-lg border ${
+          isHeroPanel
+            ? "border-white/20 bg-black/25 backdrop-blur-sm"
+            : "border-slate-200 bg-slate-50"
+        } ${compact ? "mt-2 p-2.5" : "mt-3 p-3"}`}
+      >
+        <p className={`text-xs ${isHeroPanel ? "text-slate-300" : "text-slate-500"}`}>Price from</p>
+        <p className={`text-base font-semibold ${isHeroPanel ? "text-white" : "text-slate-900"}`}>
+          EUR — coming soon
+        </p>
       </div>
+
+      {onOpenStreetView && (
+        <button
+          type="button"
+          onClick={onOpenStreetView}
+          disabled={!streetViewAvailable}
+          title={!streetViewAvailable ? "Google Maps API key not configured" : undefined}
+          className={`w-full rounded-lg border px-3 text-xs font-medium transition disabled:cursor-not-allowed disabled:opacity-40 ${
+            isHeroPanel
+              ? `border-white/30 text-white hover:bg-white/15 ${compact ? "mt-2 py-2" : "mt-2.5 py-2"}`
+              : `border-slate-300 text-slate-700 hover:bg-slate-50 ${compact ? "mt-2 py-2" : "mt-2.5 py-2"}`
+          }`}
+        >
+          Open Street View
+        </button>
+      )}
 
       <button
         type="button"
         disabled
-        className={`w-full rounded-xl bg-slate-900 px-4 text-sm font-medium text-white opacity-50 ${
-          compact ? "mt-2 py-2" : "mt-3 py-2.5"
+        className={`w-full rounded-xl px-4 text-sm font-semibold ${
+          isHeroPanel
+            ? `mt-3 bg-cyan-400 text-slate-900 opacity-50 ${compact ? "py-2" : "py-2.5"}`
+            : `bg-slate-900 text-white opacity-50 ${compact ? "mt-2 py-2" : "mt-3 py-2.5"}`
         }`}
       >
         Select destination (booking soon)
       </button>
 
-      <button
-        type="button"
-        onClick={onClose}
-        className={`w-full rounded-lg border border-slate-300 px-3 text-xs font-medium text-slate-600 transition hover:bg-slate-50 ${
-          compact ? "mt-1.5 py-1.5" : "mt-2 py-2"
-        }`}
-      >
-        {mapActionLabel}
-      </button>
+      {!hideMapAction && (
+        <button
+          type="button"
+          onClick={onClose}
+          className={`w-full rounded-lg border border-slate-300 px-3 text-xs font-medium text-slate-700 transition hover:bg-slate-50 ${
+            compact ? "mt-2 py-2" : "mt-2.5 py-2"
+          }`}
+        >
+          {mapActionLabel}
+        </button>
+      )}
     </>
   );
 }
@@ -343,6 +398,8 @@ function CalloutCard({
   variant,
   mapActionLabel,
   onEffectiveCoverChange,
+  onOpenStreetView,
+  streetViewAvailable = false,
 }: {
   location: ArchipelagoLocation;
   onClose: () => void;
@@ -354,6 +411,8 @@ function CalloutCard({
   variant: CalloutVariant;
   mapActionLabel?: string;
   onEffectiveCoverChange?: (hasCover: boolean) => void;
+  onOpenStreetView?: () => void;
+  streetViewAvailable?: boolean;
 }) {
   const isNarrow = useNarrowViewport();
   const [carouselFailed, setCarouselFailed] = useState(false);
@@ -372,6 +431,38 @@ function CalloutCard({
   const closeOnImage =
     effectiveHasCoverImages && (variant === "detail" || variant === "anchored");
   const enableSwipe = variant === "detail" || isNarrow;
+  const useHeroLayout =
+    effectiveHasCoverImages && (variant === "detail" || variant === "anchored");
+
+  if (useHeroLayout) {
+    return (
+      <DestinationHeroCard
+        key={location.id}
+        cardRef={cardRef}
+        images={location.coverImages!}
+        locationName={location.name}
+        variant={variant === "detail" ? "detail" : "anchored"}
+        enableSwipe={enableSwipe}
+        onClose={onClose}
+        onAllFailed={() => setCarouselFailed(true)}
+        placement={placement}
+        className={className}
+        style={style}
+      >
+        <CalloutContent
+          location={location}
+          onClose={onClose}
+          mapActionLabel={mapActionLabel}
+          compact={variant === "detail"}
+          hideCloseButton
+          hideMapAction
+          tone="hero-panel"
+          onOpenStreetView={onOpenStreetView}
+          streetViewAvailable={streetViewAvailable}
+        />
+      </DestinationHeroCard>
+    );
+  }
 
   return (
     <article
@@ -402,6 +493,8 @@ function CalloutCard({
           compact={variant === "detail"}
           hideCloseButton={closeOnImage}
           showGalleryPlaceholder={!effectiveHasCoverImages}
+          onOpenStreetView={onOpenStreetView}
+          streetViewAvailable={streetViewAvailable}
         />
       </div>
       {placement && (
@@ -424,11 +517,19 @@ function AnchoredCallout({
   onClose,
   anchor,
   containerSize,
+  streetViewOpen,
+  onOpenStreetView,
+  onBackFromStreetView,
+  streetViewAvailable,
 }: {
   location: ArchipelagoLocation;
   onClose: () => void;
   anchor: CalloutAnchor;
   containerSize: CalloutContainerSize;
+  streetViewOpen: boolean;
+  onOpenStreetView: () => void;
+  onBackFromStreetView: () => void;
+  streetViewAvailable: boolean;
 }) {
   const cardRef = useRef<HTMLElement>(null);
   const [placement, setPlacement] = useState<CalloutPlacement | null>(null);
@@ -453,7 +554,30 @@ function AnchoredCallout({
     setPlacement(
       computeCalloutPlacement(anchor, cardWidth, height, containerSize),
     );
-  }, [anchor, cardWidth, containerSize, location.id, effectiveHasCover]);
+  }, [anchor, cardWidth, containerSize, location.id, effectiveHasCover, streetViewOpen]);
+
+  if (streetViewOpen) {
+    return (
+      <div className="pointer-events-none absolute inset-0 z-20">
+        <DestinationStreetViewPanel
+          cardRef={cardRef}
+          location={location}
+          variant="anchored"
+          onBack={onBackFromStreetView}
+          onClose={onClose}
+          placement={placement}
+          className="callout-anchored pointer-events-auto absolute overflow-hidden rounded-2xl border shadow-2xl"
+          style={{
+            left: placement?.left ?? -9999,
+            top: placement?.top ?? -9999,
+            width: cardWidth,
+            maxHeight: placement?.maxHeight,
+            visibility: placement ? "visible" : "hidden",
+          }}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="pointer-events-none absolute inset-0 z-20">
@@ -464,6 +588,8 @@ function AnchoredCallout({
         placement={placement}
         variant="anchored"
         onEffectiveCoverChange={setEffectiveHasCover}
+        onOpenStreetView={onOpenStreetView}
+        streetViewAvailable={streetViewAvailable}
         className="callout-anchored pointer-events-auto absolute overflow-y-auto rounded-2xl border shadow-2xl"
         style={{
           left: placement?.left ?? -9999,
@@ -487,19 +613,47 @@ export function LocationMarkerCallout({
   const [sheetEffectiveHasCover, setSheetEffectiveHasCover] = useState(
     Boolean(location.coverImages?.length),
   );
+  const [streetViewOpen, setStreetViewOpen] = useState(false);
+  const streetViewAvailable = isGoogleMapsConfigured();
 
   useEffect(() => {
     setSheetEffectiveHasCover(Boolean(location.coverImages?.length));
   }, [location.id, location.coverImages?.length]);
 
+  useEffect(() => {
+    setStreetViewOpen(false);
+  }, [location.id]);
+
+  const openStreetView = useCallback(() => {
+    setStreetViewOpen(true);
+  }, []);
+
+  const closeStreetView = useCallback(() => {
+    setStreetViewOpen(false);
+  }, []);
+
   if (variant === "detail") {
+    if (streetViewOpen) {
+      return (
+        <DestinationStreetViewPanel
+          location={location}
+          variant="detail"
+          onBack={closeStreetView}
+          onClose={onClose}
+          className="h-full min-h-full w-full border shadow-sm"
+        />
+      );
+    }
+
     return (
       <CalloutCard
         location={location}
         onClose={onClose}
         variant="detail"
         mapActionLabel="Back to map"
-        className="rounded-2xl border shadow-sm"
+        onOpenStreetView={openStreetView}
+        streetViewAvailable={streetViewAvailable}
+        className="h-full min-h-full w-full border shadow-sm"
       />
     );
   }
@@ -513,16 +667,28 @@ export function LocationMarkerCallout({
           onClick={onClose}
           className="absolute inset-0 z-20 bg-slate-900/25 backdrop-blur-[1px]"
         />
-        <CalloutCard
-          location={location}
-          onClose={onClose}
-          showSheetHandle
-          variant="sheet"
-          onEffectiveCoverChange={setSheetEffectiveHasCover}
-          className={`callout-sheet absolute inset-x-0 bottom-0 z-30 overflow-y-auto rounded-t-2xl border shadow-2xl ${
-            sheetEffectiveHasCover ? "max-h-[88vh]" : "max-h-[72vh]"
-          }`}
-        />
+        {streetViewOpen ? (
+          <DestinationStreetViewPanel
+            location={location}
+            variant="sheet"
+            onBack={closeStreetView}
+            onClose={onClose}
+            className="callout-sheet absolute inset-x-0 bottom-0 z-30 overflow-hidden border shadow-2xl"
+          />
+        ) : (
+          <CalloutCard
+            location={location}
+            onClose={onClose}
+            showSheetHandle
+            variant="sheet"
+            onEffectiveCoverChange={setSheetEffectiveHasCover}
+            onOpenStreetView={openStreetView}
+            streetViewAvailable={streetViewAvailable}
+            className={`callout-sheet absolute inset-x-0 bottom-0 z-30 overflow-y-auto rounded-t-2xl border shadow-2xl ${
+              sheetEffectiveHasCover ? "max-h-[88vh]" : "max-h-[72vh]"
+            }`}
+          />
+        )}
       </>
     );
   }
@@ -537,6 +703,10 @@ export function LocationMarkerCallout({
       onClose={onClose}
       anchor={anchor}
       containerSize={containerSize}
+      streetViewOpen={streetViewOpen}
+      onOpenStreetView={openStreetView}
+      onBackFromStreetView={closeStreetView}
+      streetViewAvailable={streetViewAvailable}
     />
   );
 }
