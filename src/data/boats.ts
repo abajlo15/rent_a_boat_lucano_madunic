@@ -1,5 +1,19 @@
+import { archipelagoLocations } from "@/data/archipelago-locations";
+
 export type TourDuration = "half-day" | "full-day";
 export type SkipperMode = "with-skipper" | "without-skipper";
+
+export type DurationPricing = {
+  baseEur: number;
+  skipperSupplementEur: number;
+};
+
+export type BoatPricing = {
+  halfDay: DurationPricing;
+  fullDay: DurationPricing;
+  /** When true, only with-skipper tours are offered at the listed base price. */
+  skipperOnly?: boolean;
+};
 
 export type TourOption = {
   id: string;
@@ -7,7 +21,10 @@ export type TourOption = {
   duration: TourDuration;
   skipper: SkipperMode;
   maxGuests: number;
+  basePriceEur: number;
+  skipperSupplementEur: number;
   fromPriceEur: number;
+  skipperIncluded: boolean;
   highlights: string[];
 };
 
@@ -25,9 +42,9 @@ export type Boat = {
   buildYear: number;
   basePriceFromEur: number;
   imagePlaceholder: string;
+  pricing: BoatPricing;
   tours: TourOption[];
   destinations: string[];
-  // Future modules (phase 2+): booking, payments, admin sync.
   future: {
     seasonalPricingRef?: string;
     galleryAssetIds?: string[];
@@ -39,129 +56,206 @@ export type Boat = {
   };
 };
 
+const ALL_DESTINATION_SLUGS = archipelagoLocations.map((location) => location.slug);
+
+function tourPrice(duration: DurationPricing, withSkipper: boolean) {
+  return withSkipper
+    ? duration.baseEur + duration.skipperSupplementEur
+    : duration.baseEur;
+}
+
+function skipperIncluded(pricing: BoatPricing, duration: DurationPricing) {
+  return Boolean(pricing.skipperOnly) || duration.skipperSupplementEur === 0;
+}
+
+export function buildTourOptions(
+  boatId: string,
+  pricing: BoatPricing,
+  capacity: number,
+): TourOption[] {
+  const configs: {
+    duration: TourDuration;
+    pricingKey: "halfDay" | "fullDay";
+    label: string;
+    hours: string;
+  }[] = [
+    { duration: "half-day", pricingKey: "halfDay", label: "Half-Day", hours: "4 hours" },
+    { duration: "full-day", pricingKey: "fullDay", label: "Full-Day", hours: "8 hours" },
+  ];
+
+  const tours: TourOption[] = [];
+
+  for (const config of configs) {
+    const durationPricing = pricing[config.pricingKey];
+    const included = skipperIncluded(pricing, durationPricing);
+
+    if (!pricing.skipperOnly) {
+      tours.push({
+        id: `${boatId}-${config.duration}-without-skipper`,
+        title: `${config.label} Self Drive`,
+        duration: config.duration,
+        skipper: "without-skipper",
+        maxGuests: capacity,
+        basePriceEur: durationPricing.baseEur,
+        skipperSupplementEur: 0,
+        fromPriceEur: durationPricing.baseEur,
+        skipperIncluded: false,
+        highlights: [`${config.hours} on sea`, "Flexible route", "Your own pace"],
+      });
+    }
+
+    tours.push({
+      id: `${boatId}-${config.duration}-with-skipper`,
+      title: pricing.skipperOnly
+        ? `${config.label} With Skipper`
+        : `${config.label} With Skipper`,
+      duration: config.duration,
+      skipper: "with-skipper",
+      maxGuests: capacity,
+      basePriceEur: durationPricing.baseEur,
+      skipperSupplementEur: included ? 0 : durationPricing.skipperSupplementEur,
+      fromPriceEur: tourPrice(durationPricing, true),
+      skipperIncluded: included,
+      highlights: included
+        ? [`${config.hours} guided`, "Skipper included", "Carefree cruising"]
+        : [`${config.hours} guided`, "Local captain", "Best swim stops"],
+    });
+  }
+
+  return tours;
+}
+
+export function getBoatMinPriceEur(boat: Boat) {
+  return Math.min(...boat.tours.map((tour) => tour.fromPriceEur));
+}
+
+export function getBoatToursForDuration(boat: Boat, duration: TourDuration) {
+  return boat.tours.filter((tour) => tour.duration === duration);
+}
+
+export function getBoatMinPriceForDuration(boat: Boat, duration: TourDuration) {
+  const tours = getBoatToursForDuration(boat, duration);
+  return Math.min(...tours.map((tour) => tour.fromPriceEur));
+}
+
+export function getFleetMinPriceEur(
+  duration: TourDuration,
+  skipper?: SkipperMode,
+) {
+  const prices = boats
+    .flatMap((boat) => boat.tours)
+    .filter((tour) => tour.duration === duration)
+    .filter((tour) => (skipper ? tour.skipper === skipper : true))
+    .map((tour) => tour.fromPriceEur);
+
+  return prices.length > 0 ? Math.min(...prices) : null;
+}
+
+type BoatSeed = Omit<Boat, "tours" | "basePriceFromEur">;
+
+function createBoat(seed: BoatSeed): Boat {
+  const tours = buildTourOptions(seed.id, seed.pricing, seed.capacity);
+
+  return {
+    ...seed,
+    tours,
+    basePriceFromEur: Math.min(...tours.map((tour) => tour.fromPriceEur)),
+  };
+}
+
+const PLACEHOLDER_SPECS = {
+  lengthMeters: 0,
+  capacity: 8,
+  engine: "Details coming soon",
+  buildYear: 0,
+  imagePlaceholder: "Boat image coming soon",
+  location: "Zadar Marina",
+  destinations: ALL_DESTINATION_SLUGS,
+  future: { bookingStatus: "draft" as const },
+};
+
 export const boats: Boat[] = [
-  {
-    id: "boat-cap-camarat-65",
-    slug: "cap-camarat-65-wa",
-    name: "Cap Camarat 6.5 WA",
-    type: "Walkaround",
-    location: "Zadar Marina",
+  createBoat({
+    id: "boat-adex-29",
+    slug: "adex-29",
+    name: "ADEX 29",
+    type: "Motor boat",
     shortDescription:
-      "A versatile day boat for island hopping, swimming stops, and family trips.",
+      "Comfortable motor boat with skipper included — ideal for relaxed full-day and half-day archipelago tours.",
     longDescription:
-      "Cap Camarat 6.5 WA is a reliable and comfortable choice for couples, families, and small groups looking for a premium but practical Adriatic day experience.",
-    lengthMeters: 6.5,
-    capacity: 7,
-    engine: "Yamaha 150 HP",
-    buildYear: 2018,
-    basePriceFromEur: 300,
-    imagePlaceholder: "Boat image coming soon",
-    destinations: ["Kornati", "Telascica", "Sakarun"],
-    tours: [
-      {
-        id: "cc65-half-no-skipper",
-        title: "Half-Day Self Drive",
-        duration: "half-day",
-        skipper: "without-skipper",
-        maxGuests: 7,
-        fromPriceEur: 300,
-        highlights: ["4 hours on sea", "Flexible route", "Snorkeling stops"],
-      },
-      {
-        id: "cc65-half-skipper",
-        title: "Half-Day With Skipper",
-        duration: "half-day",
-        skipper: "with-skipper",
-        maxGuests: 7,
-        fromPriceEur: 390,
-        highlights: ["4 hours guided", "Local hidden bays", "Carefree cruising"],
-      },
-      {
-        id: "cc65-full-no-skipper",
-        title: "Full-Day Self Drive",
-        duration: "full-day",
-        skipper: "without-skipper",
-        maxGuests: 7,
-        fromPriceEur: 430,
-        highlights: ["8 hours on sea", "Island hopping", "Freedom itinerary"],
-      },
-      {
-        id: "cc65-full-skipper",
-        title: "Full-Day With Skipper",
-        duration: "full-day",
-        skipper: "with-skipper",
-        maxGuests: 7,
-        fromPriceEur: 540,
-        highlights: ["8 hours guided", "Best local spots", "Stress-free trip"],
-      },
-    ],
-    future: {
-      seasonalPricingRef: "TODO:season-cc65",
-      availabilityCalendarRef: "TODO:calendar-cc65",
-      bookingStatus: "draft",
+      "ADEX 29 is offered with a professional skipper included in the price. Technical specifications and gallery will be added soon.",
+    pricing: {
+      halfDay: { baseEur: 600, skipperSupplementEur: 0 },
+      fullDay: { baseEur: 1000, skipperSupplementEur: 0 },
+      skipperOnly: true,
     },
-  },
-  {
-    id: "boat-atlantic-670",
-    slug: "atlantic-marine-670",
-    name: "Atlantic Marine 670",
-    type: "Open",
-    location: "Zadar Marina",
+    ...PLACEHOLDER_SPECS,
+    capacity: 10,
+  }),
+  createBoat({
+    id: "boat-guma-velika",
+    slug: "guma-velika",
+    name: "Guma velika",
+    type: "RIB",
     shortDescription:
-      "Spacious and dynamic boat ideal for groups wanting comfort and performance.",
+      "Spacious RIB for active groups — self-drive or with an optional skipper.",
     longDescription:
-      "Atlantic Marine 670 offers extra deck space and stronger performance, making it perfect for active groups and longer full-day excursions around the archipelago.",
-    lengthMeters: 6.7,
-    capacity: 9,
-    engine: "Yamaha 200 HP",
-    buildYear: 2018,
-    basePriceFromEur: 320,
-    imagePlaceholder: "Boat image coming soon",
-    destinations: ["Ugljan", "Osljak", "Dugi Otok"],
-    tours: [
-      {
-        id: "a670-half-no-skipper",
-        title: "Half-Day Self Drive",
-        duration: "half-day",
-        skipper: "without-skipper",
-        maxGuests: 9,
-        fromPriceEur: 320,
-        highlights: ["4 hours on sea", "Family friendly", "Easy island access"],
-      },
-      {
-        id: "a670-half-skipper",
-        title: "Half-Day With Skipper",
-        duration: "half-day",
-        skipper: "with-skipper",
-        maxGuests: 9,
-        fromPriceEur: 430,
-        highlights: ["4 hours guided", "Local captain", "Best swim stops"],
-      },
-      {
-        id: "a670-full-no-skipper",
-        title: "Full-Day Self Drive",
-        duration: "full-day",
-        skipper: "without-skipper",
-        maxGuests: 9,
-        fromPriceEur: 470,
-        highlights: ["8 hours on sea", "Flexible route", "Private pace"],
-      },
-      {
-        id: "a670-full-skipper",
-        title: "Full-Day With Skipper",
-        duration: "full-day",
-        skipper: "with-skipper",
-        maxGuests: 9,
-        fromPriceEur: 590,
-        highlights: ["8 hours guided", "Tailored itinerary", "Premium experience"],
-      },
-    ],
-    future: {
-      seasonalPricingRef: "TODO:season-a670",
-      availabilityCalendarRef: "TODO:calendar-a670",
-      bookingStatus: "draft",
+      "Guma velika is a versatile inflatable boat for island hopping around Zadar. Full specifications coming soon.",
+    pricing: {
+      halfDay: { baseEur: 400, skipperSupplementEur: 60 },
+      fullDay: { baseEur: 800, skipperSupplementEur: 120 },
     },
-  },
+    ...PLACEHOLDER_SPECS,
+    capacity: 10,
+  }),
+  createBoat({
+    id: "boat-guma-manja",
+    slug: "guma-manja",
+    name: "Guma manja",
+    type: "RIB",
+    shortDescription:
+      "Compact RIB for smaller groups — great value for half-day and full-day trips.",
+    longDescription:
+      "Guma manja offers a nimble ride for couples and small groups. Detailed specs and photos coming soon.",
+    pricing: {
+      halfDay: { baseEur: 350, skipperSupplementEur: 60 },
+      fullDay: { baseEur: 550, skipperSupplementEur: 120 },
+    },
+    ...PLACEHOLDER_SPECS,
+    capacity: 8,
+  }),
+  createBoat({
+    id: "boat-qucci-guma",
+    slug: "qucci-guma",
+    name: "Qucci guma",
+    type: "RIB",
+    shortDescription:
+      "Affordable RIB option for exploring nearby islands and swimming bays.",
+    longDescription:
+      "Qucci guma is the most accessible boat in our fleet. Specifications and gallery coming soon.",
+    pricing: {
+      halfDay: { baseEur: 200, skipperSupplementEur: 50 },
+      fullDay: { baseEur: 350, skipperSupplementEur: 100 },
+    },
+    ...PLACEHOLDER_SPECS,
+    capacity: 6,
+  }),
+  createBoat({
+    id: "boat-quick-silver",
+    slug: "quick-silver",
+    name: "Quick Silver",
+    type: "Open boat",
+    shortDescription:
+      "Open day boat for comfortable cruising — with or without skipper.",
+    longDescription:
+      "Quick Silver balances space and performance for archipelago day trips. Full details coming soon.",
+    pricing: {
+      halfDay: { baseEur: 250, skipperSupplementEur: 60 },
+      fullDay: { baseEur: 500, skipperSupplementEur: 120 },
+    },
+    ...PLACEHOLDER_SPECS,
+    capacity: 8,
+  }),
 ];
 
 export const boatsBySlug = new Map(boats.map((boat) => [boat.slug, boat]));

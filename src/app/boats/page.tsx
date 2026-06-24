@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { BoatCard } from "@/components/BoatCard";
 import { boats } from "@/data/boats";
+import { getLocationById } from "@/data/archipelago-locations";
 
 export const metadata: Metadata = {
   title: "Our Fleet | Rent a Boat",
@@ -9,7 +10,16 @@ export const metadata: Metadata = {
     "Browse our Zadar fleet and compare half-day and full-day boat tours with or without skipper.",
 };
 
-export default function BoatsPage() {
+type BoatsPageProps = {
+  searchParams: Promise<{ destination?: string }>;
+};
+
+export default async function BoatsPage({ searchParams }: BoatsPageProps) {
+  const { destination: destinationSlug } = await searchParams;
+  const selectedDestination = destinationSlug
+    ? getLocationById(destinationSlug)
+    : undefined;
+
   return (
     <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-8 px-4 py-8 sm:px-6 lg:px-8">
       <section className="rounded-2xl bg-white p-6 shadow-sm md:p-8">
@@ -31,9 +41,28 @@ export default function BoatsPage() {
         </Link>
       </section>
 
+      {selectedDestination && (
+        <section className="rounded-2xl border border-cyan-200 bg-cyan-50 p-5 md:p-6">
+          <p className="text-sm font-semibold uppercase tracking-wide text-cyan-800">
+            Your destination
+          </p>
+          <h2 className="mt-1 text-xl font-semibold text-slate-900">
+            {selectedDestination.name}
+          </h2>
+          <p className="mt-2 text-sm text-slate-600">
+            Choose a boat for your trip.
+          </p>
+        </section>
+      )}
+
       <section className="grid gap-6 md:grid-cols-2">
         {boats.map((boat) => (
-          <BoatCard key={boat.id} boat={boat} />
+          <BoatCard
+            key={boat.id}
+            boat={boat}
+            destinationSlug={selectedDestination?.slug}
+            tourReach={selectedDestination?.tourReach}
+          />
         ))}
       </section>
     </main>

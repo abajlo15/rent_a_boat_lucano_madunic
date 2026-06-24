@@ -11,7 +11,10 @@ import {
   type RefObject,
   type TouchEvent,
 } from "react";
+import Link from "next/link";
 import type { ArchipelagoLocation } from "@/data/archipelago-locations";
+import { getFleetMinPriceEur } from "@/data/boats";
+import { boatsPagePath, boatDetailPath } from "@/lib/bookingPaths";
 import {
   computeCalloutPlacement,
   type CalloutAnchor,
@@ -44,6 +47,8 @@ type LocationMarkerCalloutProps = {
   variant: CalloutVariant;
   anchor?: CalloutAnchor;
   containerSize?: CalloutContainerSize;
+  bookingBoatSlug?: string;
+  mapActionLabel?: string;
 };
 
 const reachLabel: Record<ArchipelagoLocation["tourReach"], string> = {
@@ -253,8 +258,8 @@ function CalloutContent({
   tone = "default",
   onOpenStreetView,
   streetViewAvailable = false,
+  bookingBoatSlug,
 }: Omit<LocationMarkerCalloutProps, "variant" | "anchor" | "containerSize"> & {
-  mapActionLabel?: string;
   compact?: boolean;
   hideCloseButton?: boolean;
   hideMapAction?: boolean;
@@ -264,6 +269,7 @@ function CalloutContent({
   streetViewAvailable?: boolean;
 }) {
   const isHeroPanel = tone === "hero-panel";
+  const fleetMinPrice = getFleetMinPriceEur(location.tourReach);
 
   const badgeClass = isHeroPanel
     ? location.tourReach === "half-day"
@@ -340,7 +346,7 @@ function CalloutContent({
       >
         <p className={`text-xs ${isHeroPanel ? "text-slate-300" : "text-slate-500"}`}>Price from</p>
         <p className={`text-base font-semibold ${isHeroPanel ? "text-white" : "text-slate-900"}`}>
-          EUR — coming soon
+          {fleetMinPrice !== null ? `EUR ${fleetMinPrice}` : "EUR — coming soon"}
         </p>
       </div>
 
@@ -360,28 +366,61 @@ function CalloutContent({
         </button>
       )}
 
-      <button
-        type="button"
-        disabled
-        className={`w-full rounded-xl px-4 text-sm font-semibold ${
-          isHeroPanel
-            ? `mt-3 bg-cyan-400 text-slate-900 opacity-50 ${compact ? "py-2" : "py-2.5"}`
-            : `bg-slate-900 text-white opacity-50 ${compact ? "mt-2 py-2" : "mt-3 py-2.5"}`
-        }`}
-      >
-        Select destination (booking soon)
-      </button>
+      {bookingBoatSlug ? (
+        <>
+          <Link
+            href={boatDetailPath(bookingBoatSlug, {
+              destinationSlug: location.slug,
+              duration: location.tourReach,
+            })}
+            scroll={false}
+            className={`inline-flex w-full items-center justify-center rounded-xl px-4 text-sm font-semibold transition ${
+              isHeroPanel
+                ? `mt-3 bg-cyan-400 text-slate-900 hover:bg-cyan-300 ${compact ? "py-2" : "py-2.5"}`
+                : `bg-slate-900 text-white hover:bg-slate-700 ${compact ? "mt-2 py-2" : "mt-3 py-2.5"}`
+            }`}
+          >
+            Book this boat
+          </Link>
+          {!hideMapAction && (
+            <button
+              type="button"
+              onClick={onClose}
+              className={`w-full rounded-lg border px-3 text-xs font-medium transition ${
+                isHeroPanel
+                  ? `border-white/30 text-white hover:bg-white/15 ${compact ? "mt-2 py-2" : "mt-2.5 py-2"}`
+                  : `border-slate-300 text-slate-700 hover:bg-slate-50 ${compact ? "mt-2 py-2" : "mt-2.5 py-2"}`
+              }`}
+            >
+              {mapActionLabel}
+            </button>
+          )}
+        </>
+      ) : (
+        <>
+          <Link
+            href={boatsPagePath(location.slug)}
+            className={`inline-flex w-full items-center justify-center rounded-xl px-4 text-sm font-semibold transition ${
+              isHeroPanel
+                ? `mt-3 bg-cyan-400 text-slate-900 hover:bg-cyan-300 ${compact ? "py-2" : "py-2.5"}`
+                : `bg-slate-900 text-white hover:bg-slate-700 ${compact ? "mt-2 py-2" : "mt-3 py-2.5"}`
+            }`}
+          >
+            Select destination
+          </Link>
 
-      {!hideMapAction && (
-        <button
-          type="button"
-          onClick={onClose}
-          className={`w-full rounded-lg border border-slate-300 px-3 text-xs font-medium text-slate-700 transition hover:bg-slate-50 ${
-            compact ? "mt-2 py-2" : "mt-2.5 py-2"
-          }`}
-        >
-          {mapActionLabel}
-        </button>
+          {!hideMapAction && (
+            <button
+              type="button"
+              onClick={onClose}
+              className={`w-full rounded-lg border border-slate-300 px-3 text-xs font-medium text-slate-700 transition hover:bg-slate-50 ${
+                compact ? "mt-2 py-2" : "mt-2.5 py-2"
+              }`}
+            >
+              {mapActionLabel}
+            </button>
+          )}
+        </>
       )}
     </>
   );
@@ -397,6 +436,7 @@ function CalloutCard({
   showSheetHandle = false,
   variant,
   mapActionLabel,
+  bookingBoatSlug,
   onEffectiveCoverChange,
   onOpenStreetView,
   streetViewAvailable = false,
@@ -410,6 +450,7 @@ function CalloutCard({
   showSheetHandle?: boolean;
   variant: CalloutVariant;
   mapActionLabel?: string;
+  bookingBoatSlug?: string;
   onEffectiveCoverChange?: (hasCover: boolean) => void;
   onOpenStreetView?: () => void;
   streetViewAvailable?: boolean;
@@ -455,10 +496,11 @@ function CalloutCard({
           mapActionLabel={mapActionLabel}
           compact={variant === "detail"}
           hideCloseButton
-          hideMapAction
+          hideMapAction={!bookingBoatSlug}
           tone="hero-panel"
           onOpenStreetView={onOpenStreetView}
           streetViewAvailable={streetViewAvailable}
+          bookingBoatSlug={bookingBoatSlug}
         />
       </DestinationHeroCard>
     );
@@ -495,6 +537,7 @@ function CalloutCard({
           showGalleryPlaceholder={!effectiveHasCoverImages}
           onOpenStreetView={onOpenStreetView}
           streetViewAvailable={streetViewAvailable}
+          bookingBoatSlug={bookingBoatSlug}
         />
       </div>
       {placement && (
@@ -521,6 +564,8 @@ function AnchoredCallout({
   onOpenStreetView,
   onBackFromStreetView,
   streetViewAvailable,
+  bookingBoatSlug,
+  mapActionLabel,
 }: {
   location: ArchipelagoLocation;
   onClose: () => void;
@@ -530,6 +575,8 @@ function AnchoredCallout({
   onOpenStreetView: () => void;
   onBackFromStreetView: () => void;
   streetViewAvailable: boolean;
+  bookingBoatSlug?: string;
+  mapActionLabel?: string;
 }) {
   const cardRef = useRef<HTMLElement>(null);
   const [placement, setPlacement] = useState<CalloutPlacement | null>(null);
@@ -587,6 +634,8 @@ function AnchoredCallout({
         onClose={onClose}
         placement={placement}
         variant="anchored"
+        mapActionLabel={mapActionLabel}
+        bookingBoatSlug={bookingBoatSlug}
         onEffectiveCoverChange={setEffectiveHasCover}
         onOpenStreetView={onOpenStreetView}
         streetViewAvailable={streetViewAvailable}
@@ -609,6 +658,8 @@ export function LocationMarkerCallout({
   variant,
   anchor,
   containerSize,
+  bookingBoatSlug,
+  mapActionLabel = "Show full map",
 }: LocationMarkerCalloutProps) {
   const [sheetEffectiveHasCover, setSheetEffectiveHasCover] = useState(
     Boolean(location.coverImages?.length),
@@ -640,7 +691,7 @@ export function LocationMarkerCallout({
           variant="detail"
           onBack={closeStreetView}
           onClose={onClose}
-          className="h-full min-h-full w-full border shadow-sm"
+          className="flex h-full min-h-0 w-full flex-1 flex-col border shadow-sm"
         />
       );
     }
@@ -650,10 +701,11 @@ export function LocationMarkerCallout({
         location={location}
         onClose={onClose}
         variant="detail"
-        mapActionLabel="Back to map"
+        mapActionLabel={mapActionLabel}
+        bookingBoatSlug={bookingBoatSlug}
         onOpenStreetView={openStreetView}
         streetViewAvailable={streetViewAvailable}
-        className="h-full min-h-full w-full border shadow-sm"
+        className="flex h-full min-h-0 w-full flex-1 flex-col border shadow-sm"
       />
     );
   }
@@ -681,6 +733,8 @@ export function LocationMarkerCallout({
             onClose={onClose}
             showSheetHandle
             variant="sheet"
+            mapActionLabel={mapActionLabel}
+            bookingBoatSlug={bookingBoatSlug}
             onEffectiveCoverChange={setSheetEffectiveHasCover}
             onOpenStreetView={openStreetView}
             streetViewAvailable={streetViewAvailable}
@@ -707,6 +761,8 @@ export function LocationMarkerCallout({
       onOpenStreetView={openStreetView}
       onBackFromStreetView={closeStreetView}
       streetViewAvailable={streetViewAvailable}
+      bookingBoatSlug={bookingBoatSlug}
+      mapActionLabel={mapActionLabel}
     />
   );
 }

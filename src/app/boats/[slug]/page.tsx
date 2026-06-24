@@ -1,11 +1,19 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { notFound } from "next/navigation";
-import { TourOptions } from "@/components/TourOptions";
-import { boats, boatsBySlug } from "@/data/boats";
+import { BoatBookingFlow } from "@/components/BoatBookingFlow";
+import { BoatBookingNav } from "@/components/BoatBookingNav";
+import {
+  boats,
+  boatsBySlug,
+  getBoatMinPriceForDuration,
+  getBoatToursForDuration,
+} from "@/data/boats";
+import { getLocationById } from "@/data/archipelago-locations";
+import { isTourReach } from "@/lib/bookingPaths";
 
 type BoatDetailsPageProps = {
   params: Promise<{ slug: string }>;
+  searchParams: Promise<{ destination?: string; duration?: string }>;
 };
 
 export async function generateStaticParams() {
@@ -32,16 +40,54 @@ export async function generateMetadata({
   };
 }
 
-export default async function BoatDetailsPage({ params }: BoatDetailsPageProps) {
+export default async function BoatDetailsPage({
+  params,
+  searchParams,
+}: BoatDetailsPageProps) {
   const { slug } = await params;
+  const { destination: destinationSlug, duration } = await searchParams;
   const boat = boatsBySlug.get(slug);
+  const selectedDestination = destinationSlug
+    ? getLocationById(destinationSlug)
+    : undefined;
+  const tourReach = isTourReach(duration) ? duration : undefined;
 
   if (!boat) {
     notFound();
   }
 
+  const activeTourReach = selectedDestination?.tourReach ?? tourReach;
+
+  const toursForTrip = selectedDestination
+    ? getBoatToursForDuration(boat, selectedDestination.tourReach)
+    : boat.tours;
+  const priceFrom = activeTourReach
+    ? getBoatMinPriceForDuration(boat, activeTourReach)
+    : boat.basePriceFromEur;
+  const tourOptionsIntro = selectedDestination
+    ? selectedDestination.tourReach === "full-day"
+      ? "Pick your preferred skipper mode for this full-day trip. Booking flow and live calendar are planned in phase two."
+      : "Pick your preferred skipper mode for this half-day trip. Booking flow and live calendar are planned in phase two."
+    : "Pick your preferred duration and skipper mode. Booking flow and live calendar are planned in phase two.";
+
   return (
     <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-8 px-4 py-8 sm:px-6 lg:px-8">
+      <BoatBookingNav boat={boat} selectedDestination={selectedDestination} />
+
+      {selectedDestination && (
+        <section className="rounded-2xl border border-cyan-200 bg-cyan-50 p-5 md:p-6">
+          <p className="text-sm font-semibold uppercase tracking-wide text-cyan-800">
+            Your destination
+          </p>
+          <h2 className="mt-1 text-xl font-semibold text-slate-900">
+            {selectedDestination.name}
+          </h2>
+          <p className="mt-2 text-sm text-slate-600">
+            Booking trip with {boat.name}.
+          </p>
+        </section>
+      )}
+
       <section className="rounded-2xl bg-white p-6 shadow-sm md:p-8">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
@@ -54,7 +100,7 @@ export default async function BoatDetailsPage({ params }: BoatDetailsPageProps) 
             <p className="mt-2 text-slate-600">{boat.longDescription}</p>
           </div>
           <p className="rounded-full bg-slate-100 px-4 py-2 text-sm font-semibold text-slate-700">
-            From EUR {boat.basePriceFromEur}
+            From EUR {priceFrom}
           </p>
         </div>
 
@@ -82,14 +128,13 @@ export default async function BoatDetailsPage({ params }: BoatDetailsPageProps) 
         </p>
       </section>
 
-      <section className="space-y-4 rounded-2xl bg-white p-6 shadow-sm md:p-8">
-        <h2 className="text-2xl font-semibold text-slate-900">Tour options</h2>
-        <p className="text-slate-600">
-          Pick your preferred duration and skipper mode. Booking flow and live
-          calendar are planned in phase two.
-        </p>
-        <TourOptions tours={boat.tours} />
-      </section>
+      <BoatBookingFlow
+        boat={boat}
+        tourReach={tourReach}
+        selectedDestination={selectedDestination}
+        toursForTrip={toursForTrip}
+        tourOptionsIntro={tourOptionsIntro}
+      />
 
       <section className="rounded-2xl bg-slate-900 p-6 text-white md:p-8">
         <h2 className="text-2xl font-semibold">Suggested destinations</h2>
@@ -104,21 +149,6 @@ export default async function BoatDetailsPage({ params }: BoatDetailsPageProps) 
           ))}
         </div>
       </section>
-
-      <div className="flex flex-wrap gap-3">
-        <Link
-          href="/boats"
-          className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100"
-        >
-          Back to fleet
-        </Link>
-        <Link
-          href="/#contact"
-          className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-700"
-        >
-          Request this boat
-        </Link>
-      </div>
     </main>
   );
 }

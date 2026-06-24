@@ -1,5 +1,37 @@
 export type TourReach = "half-day" | "full-day";
 
+export type MapLabelAnchor =
+  | "center"
+  | "left"
+  | "right"
+  | "top"
+  | "bottom"
+  | "top-left"
+  | "top-right"
+  | "bottom-left"
+  | "bottom-right";
+
+export type MapLabelLayout = {
+  textAnchor: MapLabelAnchor;
+  textOffset: [number, number];
+};
+
+export const DEFAULT_MAP_LABEL_LAYOUT: MapLabelLayout = {
+  textAnchor: "bottom",
+  textOffset: [0, -1.6],
+};
+
+const MAP_LABEL_LAYOUT_OVERRIDES: Record<string, MapLabelLayout> = {
+  preko: {
+    textAnchor: "top-right",
+    textOffset: [0.4, 1.6],
+  },
+};
+
+export function getMapLabelLayout(locationId: string): MapLabelLayout {
+  return MAP_LABEL_LAYOUT_OVERRIDES[locationId] ?? DEFAULT_MAP_LABEL_LAYOUT;
+};
+
 export type ArchipelagoLocation = {
   id: string;
   slug: string;
@@ -243,6 +275,17 @@ export const ZADAR_ARBANASI = {
 
 /** Vis is far SE — including it in the overview pulls Benkovac/Obrovac onto the map. */
 export const DISTANT_OVERVIEW_LOCATION_ID = "titove-spilje";
+
+/** Stops whose labels are often hidden by collision at overview zoom. */
+export const ALWAYS_VISIBLE_MAP_LABEL_LOCATION_IDS = new Set([
+  "preko",
+  "silba",
+  "potopljeni-brod",
+]);
+
+export function shouldAlwaysShowMapLabel(locationId: string) {
+  return ALWAYS_VISIBLE_MAP_LABEL_LOCATION_IDS.has(locationId);
+}
 
 const MAX_BOUNDS_PAD = 0.018;
 

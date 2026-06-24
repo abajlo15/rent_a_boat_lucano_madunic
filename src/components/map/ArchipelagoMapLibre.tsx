@@ -15,7 +15,6 @@ import { ZADAR_ARBANASI, getLocationById } from "@/data/archipelago-locations";
 import { departurePointGeoJson, locationsToGeoJson } from "@/components/map/locationsGeoJson";
 import {
   disableFreeNavigation,
-  flyToLocation,
   getVisibleLocationIds,
   scheduleFitMapToReachFilter,
   type ReachFilter,
@@ -38,8 +37,31 @@ const LOCATION_PULSE_LAYER = "location-pulse";
 const LOCATION_CIRCLES_LAYER = "location-circles";
 const LOCATION_HALO_LAYER = "location-halo";
 const LOCATION_LABELS_LAYER = "location-labels";
+const LOCATION_PRIORITY_LABELS_LAYER = "location-priority-labels";
 const DEPARTURE_LAYER = "departure-point";
 const DEPARTURE_LABEL_LAYER = "departure-label";
+
+const INTERACTIVE_LOCATION_LAYERS = [
+  LOCATION_CIRCLES_LAYER,
+  LOCATION_LABELS_LAYER,
+  LOCATION_PRIORITY_LABELS_LAYER,
+  DEPARTURE_LAYER,
+] as const;
+
+function getExistingLayers(map: Map, layerIds: readonly string[]) {
+  return layerIds.filter((layerId) => Boolean(map.getLayer(layerId)));
+}
+
+const ALWAYS_SHOW_LABEL_FILTER: maplibregl.FilterSpecification = [
+  "==",
+  "alwaysShowLabel",
+  true,
+];
+const NON_PRIORITY_LABEL_FILTER: maplibregl.FilterSpecification = [
+  "!=",
+  "alwaysShowLabel",
+  true,
+];
 
 export type ArchipelagoMapHandle = {
   fitToFilter: (reachFilter: ReachFilter) => void;
@@ -54,6 +76,8 @@ type ArchipelagoMapLibreProps = {
   onMapReady?: (handle: ArchipelagoMapHandle) => void;
   /** When false, parent renders the callout (e.g. fixed sheet on narrow viewports). */
   showCalloutInMap?: boolean;
+  bookingBoatSlug?: string;
+  mapActionLabel?: string;
 };
 
 function applyMarkerTransitions(map: Map) {
@@ -72,9 +96,16 @@ function applyMarkerTransitions(map: Map) {
   map.setPaintProperty(LOCATION_CIRCLES_LAYER, "circle-opacity-transition", {
     duration: 300,
   });
-  map.setPaintProperty(LOCATION_LABELS_LAYER, "text-opacity-transition", {
-    duration: 300,
-  });
+  if (map.getLayer(LOCATION_LABELS_LAYER)) {
+    map.setPaintProperty(LOCATION_LABELS_LAYER, "text-opacity-transition", {
+      duration: 300,
+    });
+  }
+  if (map.getLayer(LOCATION_PRIORITY_LABELS_LAYER)) {
+    map.setPaintProperty(LOCATION_PRIORITY_LABELS_LAYER, "text-opacity-transition", {
+      duration: 300,
+    });
+  }
 }
 
 function addMapLayers(map: Map) {
@@ -158,12 +189,42 @@ function addMapLayers(map: Map) {
     id: LOCATION_LABELS_LAYER,
     type: "symbol",
     source: LOCATIONS_SOURCE,
+    filter: NON_PRIORITY_LABEL_FILTER,
     layout: {
       "text-field": ["get", "name"],
       "text-size": 12,
-      "text-offset": [0, -1.6],
-      "text-anchor": "bottom",
+      "text-offset": ["get", "labelOffset"],
+      "text-anchor": ["get", "labelAnchor"],
       "text-max-width": 10,
+      "text-font": ["Open Sans Semibold", "Arial Unicode MS Bold"],
+    },
+    paint: {
+      "text-color": "#0f172a",
+      "text-halo-color": "#ffffff",
+      "text-halo-width": 1.5,
+      "text-opacity": [
+        "case",
+        ["boolean", ["feature-state", "dimmed"], false],
+        0.45,
+        1,
+      ],
+    },
+  });
+
+  map.addLayer({
+    id: LOCATION_PRIORITY_LABELS_LAYER,
+    type: "symbol",
+    source: LOCATIONS_SOURCE,
+    filter: ALWAYS_SHOW_LABEL_FILTER,
+    layout: {
+      "text-field": ["get", "name"],
+      "text-size": 12,
+      "text-offset": ["get", "labelOffset"],
+      "text-anchor": ["get", "labelAnchor"],
+      "text-max-width": 14,
+      "text-allow-overlap": true,
+      "text-ignore-placement": true,
+      "symbol-sort-key": 1,
       "text-font": ["Open Sans Semibold", "Arial Unicode MS Bold"],
     },
     paint: {
@@ -220,6 +281,8 @@ export const ArchipelagoMapLibre = forwardRef<ArchipelagoMapHandle, ArchipelagoM
       onReset,
       onMapReady,
       showCalloutInMap = true,
+      bookingBoatSlug,
+      mapActionLabel,
     },
     ref,
   ) {
@@ -346,7 +409,10 @@ export const ArchipelagoMapLibre = forwardRef<ArchipelagoMapHandle, ArchipelagoM
         }
 
         pendingFilterRef.current = null;
-        scheduleFitMapToReachFilter(map, filter, { animate: true });
+        scheduleFitMapToReachFilter(map, filter, {
+          animate: true,
+          isNarrow: isNarrowRef.current,
+        });
       },
     });
 
@@ -373,7 +439,7 @@ export const ArchipelagoMapLibre = forwardRef<ArchipelagoMapHandle, ArchipelagoM
         scheduleFitMapToReachFilter(
           map,
           reachFilterRef.current,
-          { animate: false },
+          { animate: false, isNarrow: isNarrowRef.current },
           () => {
             if (initialFitDoneRef.current) {
               return;
@@ -391,11 +457,29 @@ export const ArchipelagoMapLibre = forwardRef<ArchipelagoMapHandle, ArchipelagoM
         );
       };
 
+      const bindLocationLayerInteractions = () => {
+        const interactiveLayers = getExistingLayers(map, [
+          LOCATION_CIRCLES_LAYER,
+          LOCATION_LABELS_LAYER,
+          LOCATION_PRIORITY_LABELS_LAYER,
+        ]);
+
+        for (const layerId of interactiveLayers) {
+          map.on("click", layerId, handleLocationClick);
+          map.on("touchend", layerId, (event) =>
+            handleLocationClick(event as unknown as MapLayerMouseEvent),
+          );
+          map.on("mouseenter", layerId, setPointerCursor);
+          map.on("mouseleave", layerId, resetCursor);
+        }
+      };
+
       map.on("load", () => {
         applyMarineBlueTheme(map);
         addMapLayers(map);
         applyMarkerTransitions(map);
         disableFreeNavigation(map);
+        bindLocationLayerInteractions();
 
         const source = map.getSource(LOCATIONS_SOURCE) as maplibregl.GeoJSONSource;
         source.setData(locationsToGeoJson(locationsRef.current));
@@ -471,20 +555,23 @@ export const ArchipelagoMapLibre = forwardRef<ArchipelagoMapHandle, ArchipelagoM
         }
 
         const hitRadius = isNarrowRef.current ? 20 : 8;
-        const features = map.queryRenderedFeatures(
-          [
-            [point.x - hitRadius, point.y - hitRadius],
-            [point.x + hitRadius, point.y + hitRadius],
-          ],
-          {
-            layers: [LOCATION_CIRCLES_LAYER, LOCATION_LABELS_LAYER, DEPARTURE_LAYER],
-          },
-        );
+        const queryableLayers = getExistingLayers(map, INTERACTIVE_LOCATION_LAYERS);
+        const features =
+          queryableLayers.length > 0 && map.isStyleLoaded()
+            ? map.queryRenderedFeatures(
+                [
+                  [point.x - hitRadius, point.y - hitRadius],
+                  [point.x + hitRadius, point.y + hitRadius],
+                ],
+                { layers: queryableLayers },
+              )
+            : [];
 
         const locationFeature = features.find(
           (feature) =>
             (feature.layer.id === LOCATION_CIRCLES_LAYER ||
-              feature.layer.id === LOCATION_LABELS_LAYER) &&
+              feature.layer.id === LOCATION_LABELS_LAYER ||
+              feature.layer.id === LOCATION_PRIORITY_LABELS_LAYER) &&
             typeof feature.properties?.id === "string",
         );
 
@@ -512,14 +599,6 @@ export const ArchipelagoMapLibre = forwardRef<ArchipelagoMapHandle, ArchipelagoM
         map.getCanvas().style.cursor = "";
       };
 
-      map.on("click", LOCATION_CIRCLES_LAYER, handleLocationClick);
-      map.on("click", LOCATION_LABELS_LAYER, handleLocationClick);
-      map.on("touchend", LOCATION_CIRCLES_LAYER, (event) =>
-        handleLocationClick(event as unknown as MapLayerMouseEvent),
-      );
-      map.on("touchend", LOCATION_LABELS_LAYER, (event) =>
-        handleLocationClick(event as unknown as MapLayerMouseEvent),
-      );
       map.on("click", handleMapClick);
       map.on("touchend", handleMapClick);
 
@@ -580,10 +659,6 @@ export const ArchipelagoMapLibre = forwardRef<ArchipelagoMapHandle, ArchipelagoM
         passive: true,
         capture: true,
       });
-      map.on("mouseenter", LOCATION_CIRCLES_LAYER, setPointerCursor);
-      map.on("mouseleave", LOCATION_CIRCLES_LAYER, resetCursor);
-      map.on("mouseenter", LOCATION_LABELS_LAYER, setPointerCursor);
-      map.on("mouseleave", LOCATION_LABELS_LAYER, resetCursor);
 
       mapRef.current = map;
 
@@ -641,20 +716,8 @@ export const ArchipelagoMapLibre = forwardRef<ArchipelagoMapHandle, ArchipelagoM
         hadSelectionRef.current = true;
 
         if (previousSelectedIdRef.current !== selectedId) {
-          const location = getLocationById(selectedId);
-          if (!location) {
-            return;
-          }
-
-          const transition = previousSelectedIdRef.current ? "hop" : "initial";
-
-          flyToLocation(map, location, {
-            animate: true,
-            transition,
-            onSettled: syncAfterCameraMove,
-          });
-
           previousSelectedIdRef.current = selectedId;
+          syncAfterCameraMove();
         }
 
         return;
@@ -668,7 +731,10 @@ export const ArchipelagoMapLibre = forwardRef<ArchipelagoMapHandle, ArchipelagoM
 
       if (hadSelectionRef.current) {
         hadSelectionRef.current = false;
-        scheduleFitMapToReachFilter(map, reachFilterRef.current, { animate: true });
+        scheduleFitMapToReachFilter(map, reachFilterRef.current, {
+          animate: true,
+          isNarrow: isNarrowRef.current,
+        });
       }
     }, [selectedId, mapReady, syncAfterCameraMove]);
 
@@ -775,16 +841,32 @@ export const ArchipelagoMapLibre = forwardRef<ArchipelagoMapHandle, ArchipelagoM
       }
 
       // Keep destination names visible on smaller screens.
-      map.setLayoutProperty(LOCATION_LABELS_LAYER, "text-allow-overlap", isNarrow);
-      map.setLayoutProperty(LOCATION_LABELS_LAYER, "text-ignore-placement", isNarrow);
-      map.setLayoutProperty(LOCATION_LABELS_LAYER, "text-size", isNarrow ? 10 : 12);
-      map.setLayoutProperty(
-        LOCATION_LABELS_LAYER,
-        "text-max-width",
-        isNarrow ? 12 : 10,
-      );
-      map.setPaintProperty(LOCATION_LABELS_LAYER, "text-halo-width", isNarrow ? 2.4 : 1.5);
-      map.setPaintProperty(LOCATION_LABELS_LAYER, "text-color", isNarrow ? "#020617" : "#0f172a");
+      if (map.getLayer(LOCATION_LABELS_LAYER)) {
+        map.setLayoutProperty(LOCATION_LABELS_LAYER, "text-allow-overlap", isNarrow);
+        map.setLayoutProperty(LOCATION_LABELS_LAYER, "text-size", isNarrow ? 10 : 12);
+        map.setLayoutProperty(
+          LOCATION_LABELS_LAYER,
+          "text-max-width",
+          isNarrow ? 12 : 10,
+        );
+        map.setPaintProperty(LOCATION_LABELS_LAYER, "text-halo-width", isNarrow ? 2.4 : 1.5);
+        map.setPaintProperty(LOCATION_LABELS_LAYER, "text-color", isNarrow ? "#020617" : "#0f172a");
+      }
+
+      if (map.getLayer(LOCATION_PRIORITY_LABELS_LAYER)) {
+        map.setLayoutProperty(LOCATION_PRIORITY_LABELS_LAYER, "text-size", isNarrow ? 10 : 12);
+        map.setLayoutProperty(LOCATION_PRIORITY_LABELS_LAYER, "text-max-width", 14);
+        map.setPaintProperty(
+          LOCATION_PRIORITY_LABELS_LAYER,
+          "text-halo-width",
+          isNarrow ? 2.4 : 1.5,
+        );
+        map.setPaintProperty(
+          LOCATION_PRIORITY_LABELS_LAYER,
+          "text-color",
+          isNarrow ? "#020617" : "#0f172a",
+        );
+      }
     }, [isNarrow, mapReady]);
 
     return (
@@ -806,6 +888,8 @@ export const ArchipelagoMapLibre = forwardRef<ArchipelagoMapHandle, ArchipelagoM
             variant="anchored"
             anchor={calloutAnchor ?? undefined}
             containerSize={calloutContainerSize}
+            bookingBoatSlug={bookingBoatSlug}
+            mapActionLabel={mapActionLabel}
           />
         )}
       </div>

@@ -19,8 +19,31 @@ const SWIPE_THRESHOLD_PX = 48;
 type DestinationHeroVariant = "detail" | "anchored";
 
 const VARIANT_CLASSES: Record<DestinationHeroVariant, string> = {
-  detail: "min-h-[min(560px,82vh)] h-full rounded-3xl",
-  anchored: "min-h-[28rem] rounded-2xl",
+  detail: "h-full min-h-0 flex-1 rounded-3xl",
+  anchored: "min-h-[32rem] rounded-2xl md:min-h-[38rem]",
+};
+
+const HERO_IMAGE_CONTROL =
+  "flex h-10 w-10 items-center justify-center rounded-full border border-white/20 bg-black/25 text-white shadow-[0_2px_12px_rgba(0,0,0,0.35)] backdrop-blur-md transition hover:border-white/35 hover:bg-black/40 active:scale-95";
+
+const HERO_CLOSE_CONTROL = `${HERO_IMAGE_CONTROL} absolute right-3 top-3 z-20 text-lg leading-none`;
+
+const HERO_NAV_CONTROL =
+  "flex h-10 w-10 items-center justify-center rounded-full border border-white/20 bg-black/25 text-white shadow-[0_2px_12px_rgba(0,0,0,0.35)] backdrop-blur-md transition hover:border-white/35 hover:bg-black/40 active:scale-95 absolute z-20 -translate-y-1/2";
+
+const NAV_VERTICAL_POSITION: Record<DestinationHeroVariant, string> = {
+  detail: "top-1/2",
+  anchored: "top-[34%] md:top-[36%]",
+};
+
+const CONTENT_PADDING: Record<DestinationHeroVariant, string> = {
+  detail: "px-4 pb-5 pt-1 sm:px-5 sm:pb-5",
+  anchored: "px-5 pb-5 pt-1 md:px-14 md:pb-6",
+};
+
+const GRADIENT_HEIGHT: Record<DestinationHeroVariant, string> = {
+  detail: "h-[62%]",
+  anchored: "h-[52%] md:h-[48%]",
 };
 
 type DestinationHeroCardProps = {
@@ -175,7 +198,7 @@ export function DestinationHeroCard({
         <div className="absolute -right-8 top-6 h-32 w-32 rounded-full bg-cyan-400/10 blur-3xl" />
         <div className="absolute -left-12 bottom-24 h-40 w-40 rounded-full bg-sky-300/10 blur-3xl" />
 
-        <div className="absolute inset-x-0 bottom-0 h-[62%] bg-gradient-to-t from-slate-950/95 via-slate-950/60 to-transparent" />
+        <div className={`absolute inset-x-0 bottom-0 bg-gradient-to-t from-slate-950/95 via-slate-950/60 to-transparent ${GRADIENT_HEIGHT[variant]}`} />
       </div>
 
       {onClose && (
@@ -183,7 +206,7 @@ export function DestinationHeroCard({
           type="button"
           onClick={onClose}
           aria-label="Close destination details"
-          className="absolute right-3 top-3 z-20 flex h-9 w-9 items-center justify-center rounded-full bg-white/90 text-sm font-medium text-slate-700 shadow-md ring-1 ring-black/10 backdrop-blur-sm transition hover:bg-white"
+          className={HERO_CLOSE_CONTROL}
         >
           ✕
         </button>
@@ -195,7 +218,7 @@ export function DestinationHeroCard({
             type="button"
             onClick={goPrev}
             aria-label="Previous photo"
-            className="absolute left-2 top-14 z-20 flex h-9 w-9 items-center justify-center rounded-full bg-white/90 text-slate-700 shadow-md ring-1 ring-black/10 backdrop-blur-sm transition hover:bg-white sm:top-16"
+            className={`${HERO_NAV_CONTROL} ${NAV_VERTICAL_POSITION[variant]} left-2 sm:left-3`}
           >
             <svg aria-hidden="true" viewBox="0 0 24 24" className="h-5 w-5" fill="currentColor">
               <path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z" />
@@ -205,7 +228,7 @@ export function DestinationHeroCard({
             type="button"
             onClick={goNext}
             aria-label="Next photo"
-            className="absolute right-2 top-14 z-20 flex h-9 w-9 items-center justify-center rounded-full bg-white/90 text-slate-700 shadow-md ring-1 ring-black/10 backdrop-blur-sm transition hover:bg-white sm:top-16"
+            className={`${HERO_NAV_CONTROL} ${NAV_VERTICAL_POSITION[variant]} right-2 sm:right-3`}
           >
             <svg aria-hidden="true" viewBox="0 0 24 24" className="h-5 w-5" fill="currentColor">
               <path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z" />
@@ -214,7 +237,7 @@ export function DestinationHeroCard({
         </>
       )}
 
-      <div className="relative z-10 mt-auto w-full px-4 pb-5 pt-1 sm:px-5 sm:pb-5">
+      <div className={`relative z-10 mt-auto w-full ${CONTENT_PADDING[variant]}`}>
         {children}
       </div>
 

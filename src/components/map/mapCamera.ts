@@ -13,25 +13,56 @@ type GeoPoint = { lat: number; lng: number };
 
 type FitCameraOptions = {
   maxZoom?: number;
+  padding?: {
+    top: number;
+    right: number;
+    bottom: number;
+    left: number;
+  };
 };
 
-const VIEWPORT_PADDING = {
+const WIDE_VIEWPORT_PADDING = {
   top: 52,
   right: 40,
   bottom: 32,
   left: 40,
 } as const;
 
-const ALL_OVERVIEW_CAMERA: FitCameraOptions = {
+const NARROW_VIEWPORT_PADDING = {
+  top: 48,
+  right: 18,
+  bottom: 26,
+  left: 18,
+} as const;
+
+const ALL_OVERVIEW_CAMERA_WIDE: FitCameraOptions = {
   maxZoom: 10.5,
+  padding: WIDE_VIEWPORT_PADDING,
 };
 
-const HALF_DAY_CAMERA: FitCameraOptions = {
+const HALF_DAY_CAMERA_WIDE: FitCameraOptions = {
   maxZoom: 13.2,
+  padding: WIDE_VIEWPORT_PADDING,
 };
 
-const FULL_DAY_CAMERA: FitCameraOptions = {
+const FULL_DAY_CAMERA_WIDE: FitCameraOptions = {
   maxZoom: 10.8,
+  padding: WIDE_VIEWPORT_PADDING,
+};
+
+const ALL_OVERVIEW_CAMERA_NARROW: FitCameraOptions = {
+  maxZoom: 9.8,
+  padding: NARROW_VIEWPORT_PADDING,
+};
+
+const HALF_DAY_CAMERA_NARROW: FitCameraOptions = {
+  maxZoom: 13.5,
+  padding: NARROW_VIEWPORT_PADDING,
+};
+
+const FULL_DAY_CAMERA_NARROW: FitCameraOptions = {
+  maxZoom: 11.4,
+  padding: NARROW_VIEWPORT_PADDING,
 };
 
 function getOverviewGeoPoints() {
@@ -60,16 +91,31 @@ export function getPointsForReachFilter(reachFilter: ReachFilter): GeoPoint[] {
   ];
 }
 
-export function getFitCameraOptions(reachFilter: ReachFilter): FitCameraOptions {
+export function getFitCameraOptions(
+  reachFilter: ReachFilter,
+  isNarrow = false,
+): FitCameraOptions {
+  if (isNarrow) {
+    if (reachFilter === "all") {
+      return ALL_OVERVIEW_CAMERA_NARROW;
+    }
+
+    if (reachFilter === "half-day") {
+      return HALF_DAY_CAMERA_NARROW;
+    }
+
+    return FULL_DAY_CAMERA_NARROW;
+  }
+
   if (reachFilter === "all") {
-    return ALL_OVERVIEW_CAMERA;
+    return ALL_OVERVIEW_CAMERA_WIDE;
   }
 
   if (reachFilter === "half-day") {
-    return HALF_DAY_CAMERA;
+    return HALF_DAY_CAMERA_WIDE;
   }
 
-  return FULL_DAY_CAMERA;
+  return FULL_DAY_CAMERA_WIDE;
 }
 
 function getBoundsForReachFilter(reachFilter: ReachFilter) {
@@ -101,20 +147,21 @@ export function disableFreeNavigation(map: Map) {
 export function fitMapToReachFilter(
   map: Map,
   reachFilter: ReachFilter,
-  options?: { animate?: boolean; duration?: number },
+  options?: { animate?: boolean; duration?: number; isNarrow?: boolean },
 ): boolean {
   if (!map.isStyleLoaded() || !hasUsableMapSize(map)) {
     return false;
   }
 
-  const { maxZoom = ALL_OVERVIEW_CAMERA.maxZoom! } = getFitCameraOptions(reachFilter);
+  const { maxZoom = ALL_OVERVIEW_CAMERA_WIDE.maxZoom!, padding = WIDE_VIEWPORT_PADDING } =
+    getFitCameraOptions(reachFilter, options?.isNarrow);
   const bounds = getBoundsForReachFilter(reachFilter);
   const duration = options?.animate === false ? 0 : (options?.duration ?? 900);
 
   map.resize();
 
   const camera = map.cameraForBounds(bounds, {
-    padding: VIEWPORT_PADDING,
+    padding,
     maxZoom,
   });
 
@@ -141,7 +188,7 @@ export function fitMapToReachFilter(
 export function scheduleFitMapToReachFilter(
   map: Map,
   reachFilter: ReachFilter,
-  options?: { animate?: boolean; duration?: number },
+  options?: { animate?: boolean; duration?: number; isNarrow?: boolean },
   onSuccess?: () => void,
 ) {
   let attempts = 0;
@@ -191,10 +238,10 @@ export function getVisibleLocationIds(
       const point = map.project([location.geo.lng, location.geo.lat]);
 
       return (
-        point.x >= VIEWPORT_PADDING.left &&
-        point.x <= width - VIEWPORT_PADDING.right &&
-        point.y >= VIEWPORT_PADDING.top &&
-        point.y <= height - VIEWPORT_PADDING.bottom
+        point.x >= WIDE_VIEWPORT_PADDING.left &&
+        point.x <= width - WIDE_VIEWPORT_PADDING.right &&
+        point.y >= WIDE_VIEWPORT_PADDING.top &&
+        point.y <= height - WIDE_VIEWPORT_PADDING.bottom
       );
     })
     .map((location) => location.id);
